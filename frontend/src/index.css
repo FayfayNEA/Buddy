@@ -1,0 +1,722 @@
+/* Norsy: add font files to public/fonts/ (e.g. Norsy-Regular.woff2) to use */
+@font-face {
+  font-family: 'Norsy';
+  src: url('/fonts/Norsy-Regular.woff2') format('woff2'),
+       url('/fonts/Norsy-Regular.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Red Rose font family */
+@font-face {
+  font-family: 'Red Rose';
+  src: url('/fonts/Red_Rose/static/RedRose-Light.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Red Rose';
+  src: url('/fonts/Red_Rose/static/RedRose-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Red Rose';
+  src: url('/fonts/Red_Rose/static/RedRose-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Red Rose';
+  src: url('/fonts/Red_Rose/static/RedRose-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Red Rose';
+  src: url('/fonts/Red_Rose/static/RedRose-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --bg: #fbfbfd;
+  --bg-elevated: #ffffff;
+  --text: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --border: rgba(0, 0, 0, 0.08);
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  --radius: 18px;
+  --radius-sm: 12px;
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --success: #34c759;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  overflow-x: hidden;
+  margin: 0;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-x: hidden;
+  width: 100%;
+}
+
+/* ---------- 3-Phase Intro (Spiral → Explosion → Header) ---------- */
+.intro-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.intro-overlay--white {
+  background-color: #ffffff;
+}
+
+.intro-spiral-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.intro-spiral-svg {
+  width: 120px;
+  height: 120px;
+  display: block;
+}
+
+.intro-explosion-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.intro-mask-svg {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+  display: block;
+}
+
+/* App shell — centered, Apple-style */
+.app {
+ 
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px 64px;
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+.app-inner {
+  width: 100%;
+  max-width: 980px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  position: relative; /* anchor for absolute status badge at bottom-left */
+}
+
+/* Header */
+.header {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: -90px;
+  margin-bottom: -20px;
+  font-family: 'Red Rose', serif;
+}
+
+
+
+
+.header-logo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.header-logo-btn:hover {
+  opacity: 0.85;
+}
+
+.header-logo-img {
+  height: 160px;
+  width: auto;
+  display: block;
+  object-fit: contain;
+}
+
+/* Main content below fixed header (Phase 2) - 120px gap between header and stage */
+.app-main {
+  width: 100%;
+  padding-top: 10px;
+}
+
+.logo {
+  font-family: 'Red Rose', serif;
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin: 0;
+  text-transform: none;
+}
+
+.header-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-active {
+  color: var(--success);
+}
+
+.status-spinner {
+  width: 14px;
+  height: 14px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.history-count {
+  color: var(--text-secondary);
+}
+
+/* Stage */
+.stage {
+  position: relative;
+  width: 100%;
+  margin-top: -20px;
+  aspect-ratio: 16 / 10;
+  max-height: 56vh;
+  background: var(--bg-elevated);
+  border-radius: 60px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+/* Make the main image box larger on laptop/desktop screens */
+@media (min-width: 1024px) {
+  .app-inner {
+    max-width: 1150px;
+  }
+
+  .stage {
+    max-height: 66vh;
+  }
+}
+
+.stage-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  position: relative;
+}
+
+.stage-empty-icon {
+  width: 48px;
+  height: 48px;
+  opacity: 0.4;
+  margin-bottom: 16px;
+}
+
+.stage-empty-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.stage-empty-overlay-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 80px;
+  font-weight: 500;
+  color: #ffffff;
+  font-family: 'Red Rose', serif;
+  margin: 0;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+.stage-empty-text {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.stage-loading {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.stage-loading-spinner {
+  width: 48px;
+  height: 48px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+.stage-loading-text {
+  font-size: 1rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.stage-content {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.stage-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 38px;
+}
+
+.stage-diagram {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 16px;
+  background: var(--bg-elevated);
+}
+
+.stage-diagram .mermaid {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* Ensure SVG diagrams fill the available box and are easy to read */
+.stage-diagram .mermaid svg {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+
+.stage-caption {
+  margin-top: 20px;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 20px;
+  color: #000000;
+  font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 400;
+  line-height: 1.35;
+  padding-bottom: 6px;
+}
+
+.stage-caption-long {
+  margin-bottom: 20px;
+}
+.stage-caption-index {
+  flex: 0 0 auto;
+  font-size: clamp(14px, 2.2vw + 10px, 20px);
+}
+
+.stage-caption-text {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: clamp(14px, 2.2vw + 10px, 20px);
+  min-width: 0;
+}
+
+/* Nav arrows */
+/* Liquid glass nav arrows */
+.stage-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.25s, color 0.25s, box-shadow 0.25s, transform 0.2s;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.stage-nav:hover {
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--text);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.stage-nav:active {
+  transform: translateY(-50%) scale(0.96);
+}
+
+.stage-nav-prev {
+  left: 16px;
+}
+
+.stage-nav-next {
+  right: 16px;
+}
+
+/* Controls */
+.controls {
+  margin-top: 65px; /* base position when there is no caption */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 32px;
+}
+
+/* Extra spacing under caption depending on length */
+.controls-caption {
+  margin-top: 30px; /* base 15px + 15px extra when there is a (short) caption */
+}
+
+.controls-caption-long {
+  margin-top: 35px; /* base 15px + 20px extra when caption is long */
+}
+
+/* Commit button - Liquid glass style, upper left corner */
+.commit-btn {
+  position: fixed;
+  top: 30px;
+  left: 4.5%;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 65px;
+  height: 65px;
+  padding: 0;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  overflow: hidden;
+  color: #ffffff;
+  font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 500;
+  font-size: 35px;
+  line-height: 1;
+  background-color: rgba(105, 77, 231, 0.6); 
+  border: 1px solid rgba(255, 255, 255, 0.1); /* glass edge */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 0 20px rgba(82, 43, 255, 0.4),          /* inner purple glow */
+    inset 0 1px 1px rgba(255, 255, 255, 0.3);       /* specular highlight */
+  transition:
+    background-color 0.3s ease,
+    box-shadow 0.3s ease,
+    transform 0.15s ease;
+}
+
+.commit-btn:hover {
+  box-shadow:
+    inset 0 0 25px rgba(82, 43, 255, 0.5),
+    inset 0 1px 1px rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+.commit-btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.commit-btn > * {
+  position: relative;
+  z-index: 1; /* text/icon above glow */
+}
+
+.commit-btn img {
+  display: block;
+  width: 20px;
+  height: 20px;
+  max-width: 80%;
+  max-height: 80%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  background: transparent;
+}
+
+.commit-btn-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Dial — turn to browse forward/back */
+.dial {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 2px solid var(--border);
+  box-shadow: var(--shadow);
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;
+}
+
+.dial:active {
+  cursor: grabbing;
+}
+
+.dial-knob {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  width: 4px;
+  height: 18px;
+  margin-left: -2px;
+  background: var(--text);
+  border-radius: 2px;
+  transform-origin: 50% 28px;
+  transition: transform 0.15s ease-out;
+  pointer-events: none;
+}
+
+.dial-label {
+  position: absolute;
+  bottom: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Liquid glass vibe button — pill, inner glow + glass */
+.liquid-btn {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1000px;
+  width: 400px;
+  height: 56px;
+  padding: 10px 28px;
+  color: #ffffff;
+  font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 400;
+  font-size: 24px;
+  line-height: 1;
+  background-color: rgba(105, 77, 231, 0.6); 
+  border: 1px solid rgba(255, 255, 255, 0.1); /* glass edge */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 0 25px rgba(82, 43, 255, 0.6),
+    inset 0 1px 2px rgba(255, 255, 255, 0.4);
+  transition:
+    background-color 0.3s ease,
+    box-shadow 0.3s ease,
+    transform 0.15s ease;
+}
+
+.liquid-btn:hover {
+  transform: translateY(-1px);
+}
+
+.liquid-btn--active {
+  background-color: rgba(241, 0, 4, 0.6);
+  box-shadow:
+    inset 0 0 20px rgba(241, 0, 4, 0.6),            /* inner red glow */
+    inset 0 1px 1px rgba(255, 255, 255, 0.3);       /* specular highlight */
+}
+
+.liquid-btn--active:hover {
+  transform: translateY(-1px);
+}
+
+.liquid-btn > * {
+  position: relative;
+  z-index: 1; /* text above glow */
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Status badge text under the SVG in the bottom-left corner */
+.status-badge-label {
+
+  display: flex;
+  gap: 12px;
+}
+
+.status-text {
+  font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 20px;
+  font-weight: 300;
+  text-align: center;
+  color: #000000;
+}
+
+/* First-visit notice: API pricing / on-request use (dismiss stored in localStorage) */
+.access-notice-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 15, 20, 0.55);
+  backdrop-filter: blur(8px);
+}
+
+.access-notice-card {
+  max-width: 420px;
+  width: 100%;
+  padding: 28px 28px 24px;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+
+.access-notice-title {
+  margin: 0 0 12px;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.access-notice-body {
+  margin: 0 0 16px;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.access-notice-contact {
+  margin: 0 0 20px;
+  font-size: 0.95rem;
+}
+
+.access-notice-link {
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.access-notice-link:hover {
+  text-decoration: underline;
+}
+
+.access-notice-btn {
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: #fff;
+  background: var(--accent);
+}
+
+.access-notice-btn:hover {
+  background: var(--accent-hover);
+}
