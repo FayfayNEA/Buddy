@@ -58,8 +58,11 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  --bg: #fbfbfd;
-  --bg-elevated: #ffffff;
+  --bg: #F2F0F9;
+  --bg-elevated: #F8F6FD;
+  --purple-light: rgba(120, 90, 220, 0.42);
+  --purple-border: rgba(147, 114, 240, 0.35);
+  --purple-text: #5b47cc;
   --text: #1d1d1f;
   --text-secondary: #6e6e73;
   --border: rgba(0, 0, 0, 0.08);
@@ -141,18 +144,19 @@ body {
 
 /* App shell — centered, Apple-style */
 .app {
- 
   width: 100%;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 48px 24px 64px;
-  overflow-x: hidden;
+  padding: 0 24px;
   max-width: 100vw;
 }
 
 .app-inner {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 980px;
   display: flex;
@@ -173,6 +177,17 @@ body {
   font-family: 'Red Rose', serif;
 }
 
+.header--fixed {
+  position: fixed;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  margin: 0;
+  z-index: 40;
+  pointer-events: auto;
+}
+
 
 
 
@@ -187,21 +202,25 @@ body {
   flex-shrink: 0;
 }
 
+.header-logo-btn {
+  transition: opacity 0.3s ease;
+}
+
 .header-logo-btn:hover {
-  opacity: 0.85;
+  opacity: 0.6;
 }
 
 .header-logo-img {
-  height: 160px;
+  height: 200px;
   width: auto;
   display: block;
   object-fit: contain;
 }
 
-/* Main content below fixed header (Phase 2) - 120px gap between header and stage */
+/* Main content below fixed header (Phase 2) - push down below logo + buttons */
 .app-main {
   width: 100%;
-  padding-top: 10px;
+  padding-top: 110px;
 }
 
 .logo {
@@ -250,12 +269,12 @@ body {
 /* Stage */
 .stage {
   position: relative;
-  width: 100%;
-  margin-top: -20px;
-  aspect-ratio: 16 / 10;
-  max-height: 56vh;
+  width: 90%;
+  margin: -20px auto 0;
+  aspect-ratio: 4 / 3;
+  max-height: 52vh;
   background: var(--bg-elevated);
-  border-radius: 60px;
+  border-radius: 12px;
   overflow: hidden;
   box-shadow: var(--shadow);
 }
@@ -267,7 +286,7 @@ body {
   }
 
   .stage {
-    max-height: 66vh;
+    max-height: 62vh;
   }
 }
 
@@ -280,6 +299,91 @@ body {
   justify-content: center;
   color: var(--text-secondary);
   position: relative;
+}
+
+.stage-empty--blobs {
+  overflow: hidden;
+  background: #e9e4f8;
+}
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.75;
+  mix-blend-mode: multiply;
+}
+
+.blob-1 {
+  width: 55%;
+  height: 75%;
+  background: radial-gradient(circle, #c4b5fd, #a78bfa);
+  top: -15%;
+  left: -10%;
+  animation: blobMove1 9s ease-in-out infinite;
+}
+
+.blob-2 {
+  width: 50%;
+  height: 70%;
+  background: radial-gradient(circle, #ddd6fe, #818cf8);
+  bottom: -20%;
+  right: -5%;
+  animation: blobMove2 11s ease-in-out infinite;
+}
+
+.blob-3 {
+  width: 40%;
+  height: 55%;
+  background: radial-gradient(circle, #ede9fe, #c084fc);
+  top: 30%;
+  left: 30%;
+  animation: blobMove3 13s ease-in-out infinite;
+}
+
+/* Full-page ripple background layer */
+.ripple-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/* Water puddle ripples */
+.puddle-ripple {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 0.5px solid rgba(255, 255, 255, 0.6);
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: none;
+  animation: puddleRipple 1.8s ease-out forwards;
+}
+
+@keyframes puddleRipple {
+  0%   { transform: translate(-50%, -50%) scale(1);   opacity: 0.9; }
+  60%  { opacity: 0.4; }
+  100% { transform: translate(-50%, -50%) scale(22);  opacity: 0; }
+}
+
+@keyframes blobMove1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%       { transform: translate(8%, 12%) scale(1.08); }
+  66%       { transform: translate(-5%, 6%) scale(0.95); }
+}
+
+@keyframes blobMove2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%       { transform: translate(-10%, -8%) scale(1.06); }
+  66%       { transform: translate(6%, -12%) scale(0.97); }
+}
+
+@keyframes blobMove3 {
+  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  33%       { transform: translate(-8%, 10%) scale(1.1) rotate(15deg); }
+  66%       { transform: translate(10%, -6%) scale(0.92) rotate(-10deg); }
 }
 
 .stage-empty-icon {
@@ -360,7 +464,13 @@ body {
   align-items: stretch;
   justify-content: stretch;
   padding: 16px;
-  background: var(--bg-elevated);
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.6),
+    0 8px 32px rgba(0, 0, 0, 0.08);
 }
 
 .stage-diagram .mermaid {
@@ -379,7 +489,7 @@ body {
 }
 
 .stage-caption {
-  margin-top: 20px;
+  margin-top: 10px;
   display: flex;
   align-items: baseline;
   justify-content: center;
@@ -456,7 +566,7 @@ body {
 
 /* Controls */
 .controls {
-  margin-top: 65px; /* base position when there is no caption */
+  margin-top: 24px;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -466,52 +576,36 @@ body {
 
 /* Extra spacing under caption depending on length */
 .controls-caption {
-  margin-top: 30px; /* base 15px + 15px extra when there is a (short) caption */
+  margin-top: 12px;
 }
 
 .controls-caption-long {
-  margin-top: 35px; /* base 15px + 20px extra when caption is long */
+  margin-top: 16px;
 }
 
-/* Commit button - Liquid glass style, upper left corner */
+/* Commit button */
 .commit-btn {
   position: fixed;
-  top: 30px;
+  top: 27px;
   left: 4.5%;
   z-index: 50;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 65px;
-  height: 65px;
+  width: 46px;
+  height: 46px;
   padding: 0;
   border-radius: 9999px;
   border: none;
   cursor: pointer;
-  overflow: hidden;
   color: #ffffff;
-  font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-weight: 500;
-  font-size: 35px;
-  line-height: 1;
-  background-color: rgba(105, 77, 231, 0.6); 
-  border: 1px solid rgba(255, 255, 255, 0.1); /* glass edge */
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow:
-    inset 0 0 20px rgba(82, 43, 255, 0.4),          /* inner purple glow */
-    inset 0 1px 1px rgba(255, 255, 255, 0.3);       /* specular highlight */
-  transition:
-    background-color 0.3s ease,
-    box-shadow 0.3s ease,
-    transform 0.15s ease;
+  background-color: var(--purple-light);
+  transition: background-color 0.2s ease, transform 0.15s ease;
 }
 
 .commit-btn:hover {
-  box-shadow:
-    inset 0 0 25px rgba(82, 43, 255, 0.5),
-    inset 0 1px 1px rgba(255, 255, 255, 0.4);
+  background-color: rgba(120, 90, 220, 0.55);
   transform: translateY(-1px);
 }
 
@@ -539,6 +633,43 @@ body {
 .commit-btn-icon {
   width: 16px;
   height: 16px;
+}
+
+/* Restart button */
+.restart-btn {
+  position: fixed;
+  top: 42px;
+  right: 4.5%;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  color: #ffffff;
+  background-color: var(--purple-light);
+  transition: background-color 0.2s ease, transform 0.15s ease;
+}
+
+.restart-btn svg {
+  transition: transform 0.5s ease;
+}
+
+.restart-btn:hover {
+  background-color: rgba(120, 90, 220, 0.55);
+}
+
+.restart-btn:hover svg {
+  transform: rotate(-360deg);
+}
+
+.restart-btn:active svg {
+  transform: rotate(-720deg);
+  transition: transform 0.25s ease;
 }
 
 /* Dial — turn to browse forward/back */
@@ -586,10 +717,9 @@ body {
   white-space: nowrap;
 }
 
-/* Liquid glass vibe button — pill, inner glow + glass */
+/* Vibe button */
 .liquid-btn {
   position: relative;
-  overflow: hidden;
   border-radius: 1000px;
   width: 400px;
   height: 56px;
@@ -599,31 +729,23 @@ body {
   font-weight: 400;
   font-size: 24px;
   line-height: 1;
-  background-color: rgba(105, 77, 231, 0.6); 
-  border: 1px solid rgba(255, 255, 255, 0.1); /* glass edge */
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow:
-    inset 0 0 25px rgba(82, 43, 255, 0.6),
-    inset 0 1px 2px rgba(255, 255, 255, 0.4);
-  transition:
-    background-color 0.3s ease,
-    box-shadow 0.3s ease,
-    transform 0.15s ease;
+  background-color: var(--purple-light);
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.15s ease;
 }
 
 .liquid-btn:hover {
+  background-color: rgba(120, 90, 220, 0.55);
   transform: translateY(-1px);
 }
 
 .liquid-btn--active {
-  background-color: rgba(241, 0, 4, 0.6);
-  box-shadow:
-    inset 0 0 20px rgba(241, 0, 4, 0.6),            /* inner red glow */
-    inset 0 1px 1px rgba(255, 255, 255, 0.3);       /* specular highlight */
+  background-color: rgba(220, 30, 30, 0.75);
 }
 
 .liquid-btn--active:hover {
+  background-color: rgba(200, 20, 20, 0.85);
   transform: translateY(-1px);
 }
 
@@ -650,6 +772,130 @@ body {
   font-weight: 300;
   text-align: center;
   color: #000000;
+}
+
+/* ===== Walkthrough ===== */
+.wt-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 15, 40, 0.45);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 200;
+  pointer-events: all;
+}
+
+/* Step 0 (intro): no dim, no blur */
+.wt-overlay[data-step="0"] {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Lift highlighted element above overlay so it shows through the dim */
+.wt-step-0 .header--fixed,
+.wt-step-1 .status-badge-wrapper,
+.wt-step-2 .commit-btn,
+.wt-step-3 .restart-btn {
+  z-index: 201 !important;
+}
+
+/* Stage lives inside app-inner (z-index:1 stacking context) so lift the whole inner on step 4 */
+.wt-step-4 .app-inner {
+  z-index: 201 !important;
+}
+
+.wt-card {
+  position: fixed;
+  z-index: 202;
+  width: min(420px, 88vw);
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 36px 36px 28px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wt-num {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #a78bfa;
+}
+
+.wt-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.wt-body {
+  font-size: 15px;
+  color: #4b4b6a;
+  margin: 4px 0 8px;
+  line-height: 1.6;
+}
+
+.wt-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.wt-skip {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: #a0a0b8;
+  padding: 0;
+  font-family: inherit;
+}
+
+.wt-skip:hover { color: #6b6b8a; }
+
+.wt-next {
+  background: #7c5cfc;
+  color: #ffffff;
+  border: none;
+  border-radius: 100px;
+  padding: 10px 26px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.wt-next:hover {
+  background: #6a4aef;
+  transform: translateY(-1px);
+}
+
+.wt-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.wt-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ddd8f8;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.wt-dot--active {
+  background: #7c5cfc;
+  transform: scale(1.3);
 }
 
 /* First-visit notice: API pricing / on-request use (dismiss stored in localStorage) */

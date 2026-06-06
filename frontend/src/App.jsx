@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import RecordRTC from 'recordrtc';
 import hark from 'hark';
-import { ChevronLeft, ChevronRight, Zap, Loader2, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Zap, Loader2, Download, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import mermaid from 'mermaid';
 
@@ -53,6 +53,40 @@ const HIDE_ACCESS_NOTICE = import.meta.env.VITE_HIDE_ACCESS_NOTICE === "true";
 const DEMO_TOKEN_KEY = "buddy_demo_token";
 const DEMO_REMAINING_KEY = "buddy_demo_remaining";
 const DEMO_LIMIT = 3;
+const WALKTHROUGH_KEY = "buddy_walkthrough_done";
+
+const WALKTHROUGH_STEPS = [
+  {
+    num: "01",
+    title: "Meet Buddy",
+    body: "Your AI design partner. Speak an idea and Buddy turns it into a diagram or generated image in real time.",
+    cardStyle: { bottom: "10%", right: "4%" },
+  },
+  {
+    num: "02",
+    title: "Status indicator",
+    body: "This tells you what Buddy is doing. It cycles through Idle, Hearing, Listening, Generating, and Done as you work.",
+    cardStyle: { bottom: "18%", left: "4%" },
+  },
+  {
+    num: "03",
+    title: "Download your session",
+    body: "When you are done creating, hit this button to export everything as a ZIP file with a PDF summary inside.",
+    cardStyle: { top: "100px", left: "4%" },
+  },
+  {
+    num: "04",
+    title: "Reset",
+    body: "This clears your canvas and gives you a fresh start. Your generation count carries over.",
+    cardStyle: { top: "100px", right: "4%" },
+  },
+  {
+    num: "05",
+    title: "Your canvas",
+    body: `Speak a request and it appears here. You get ${DEMO_LIMIT} free generations. Hit Start Vibing below and describe anything.`,
+    cardStyle: { top: "112px", left: "50%", transform: "translateX(-50%)" },
+  },
+];
 
 // Liquid glass button component used to toggle vibe mode.
 // Uses a base #333 fill on the button and an ::after pseudo-element
@@ -84,6 +118,32 @@ export default function App() {
   const [status, setStatus] = useState("Idle");
   const [isGenerating, setIsGenerating] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const rippleThrottleRef = useRef(null);
+
+  // Blob water tracking — viscous lerp toward cursor
+  const blobTargetRef = useRef({ x: 0, y: 0 });
+  const blobPosRef = useRef([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }]);
+  const blobRafRef = useRef(null);
+  const [blobPos, setBlobPos] = useState([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }]);
+
+  useEffect(() => {
+    const speeds = [0.04, 0.07, 0.12]; // responsive but still lags behind
+    const loop = () => {
+      const t = blobTargetRef.current;
+      const next = blobPosRef.current.map((p, i) => ({
+        x: p.x + (t.x - p.x) * speeds[i],
+        y: p.y + (t.y - p.y) * speeds[i],
+      }));
+      blobPosRef.current = next;
+      setBlobPos([...next]);
+      blobRafRef.current = requestAnimationFrame(loop);
+    };
+    blobRafRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(blobRafRef.current);
+  }, []);
+
+  const handleBlobMouseMove = () => {};
+
   const [demoToken, setDemoToken] = useState(() => {
     try { return localStorage.getItem(DEMO_TOKEN_KEY) || ""; } catch { return ""; }
   });
@@ -95,14 +155,21 @@ export default function App() {
   });
   // 3-phase intro: 0 = Spiral Down, 1 = Explosion, 2 = Header (main app)
   const [introPhase, setIntroPhase] = useState(0);
-  const [showAccessNotice, setShowAccessNotice] = useState(() => {
-    if (HIDE_ACCESS_NOTICE) return false;
-    try {
-      return !localStorage.getItem(ACCESS_NOTICE_KEY);
-    } catch {
-      return true;
-    }
+  const [showAccessNotice, setShowAccessNotice] = useState(false);
+  const [walkthroughStep, setWalkthroughStep] = useState(() => {
+    const forceOn = new URLSearchParams(window.location.search).has("wt");
+    try { return (forceOn || !localStorage.getItem(WALKTHROUGH_KEY)) ? 0 : null; } catch { return 0; }
   });
+
+  const finishWalkthrough = () => {
+    try { localStorage.setItem(WALKTHROUGH_KEY, "1"); } catch { /* ignore */ }
+    setWalkthroughStep(null);
+  };
+  const advanceWalkthrough = () => {
+    if (walkthroughStep === null) return;
+    if (walkthroughStep >= WALKTHROUGH_STEPS.length - 1) finishWalkthrough();
+    else setWalkthroughStep(s => s + 1);
+  };
 
   // --- REFS ---
   const recorderRef = useRef(null);
@@ -369,6 +436,13 @@ export default function App() {
     }
   };
 
+  const resetSession = () => {
+    stopVibeSession();
+    setHistory([]);
+    historyRef.current = [];
+    setCurrentIndex(0);
+  };
+
   // --- 5. SEND TO BACKEND (THE CRITICAL FIX) ---
   const sendAudio = async (blob) => {
     const formData = new FormData();
@@ -506,50 +580,59 @@ export default function App() {
   const isLongCaption =
     currentItem?.transcript && currentItem.transcript.length > 80;
   const hasCaption = !!currentItem;
-  // While an image request runs, the mic stays active and new clips queue — don't hide Hearing/Listening.
-  const displayStatus =
-    vibeMode &&
-    (status === "Hearing" ||
-      status === "Waiting" ||
-      status === "Processing" ||
-      status === "Listening")
+  const _transientStatuses = new Set(["Done", "Saved!", "Zipping", "Export Error", "Backend Error"]);
+  const displayStatus = vibeMode
+    ? (status === "Hearing" || status === "Waiting" || status === "Processing" || status === "Listening")
       ? status
-      : isGenerating
-        ? "Generating"
-        : status;
+      : isGenerating ? "Generating" : status
+    : isGenerating
+      ? "Generating"
+      : _transientStatuses.has(status) ? status : "Idle";
   const statusImageSrc = STATUS_IMAGES[displayStatus] || STATUS_IMAGES.default;
 
   return (
-    <div className="app">
+    <div className={`app${walkthroughStep !== null ? ` wt-step-${walkthroughStep}` : ''}`}>
+      {/* ========== WALKTHROUGH overlay (dim layer) ========== */}
       <AnimatePresence>
-        {introPhase === 2 && showAccessNotice && (
+        {introPhase === 2 && walkthroughStep !== null && (
           <motion.div
-            key="access-notice"
-            className="access-notice-backdrop"
+            key="wt-overlay"
+            className="wt-overlay"
+            data-step={walkthroughStep}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="access-notice-title"
+            transition={{ duration: 0.3 }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ========== WALKTHROUGH card (above everything) ========== */}
+      <AnimatePresence mode="wait">
+        {introPhase === 2 && walkthroughStep !== null && (
+          <motion.div
+            key={walkthroughStep}
+            className="wt-card"
+            style={{ ...WALKTHROUGH_STEPS[walkthroughStep].cardStyle, width: 'min(300px, 82vw)' }}
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
           >
-            <motion.div
-              className="access-notice-card"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
-            >
-              <h2 id="access-notice-title" className="access-notice-title">
-                Buddy — free demo
-              </h2>
-              <p className="access-notice-body">
-                You get <strong>{DEMO_LIMIT} free generations</strong> — speak a request and Buddy will sketch or diagram it in real time. After that, reach out if you want to keep going.
-              </p>
-              <button type="button" className="access-notice-btn" onClick={dismissAccessNotice}>
-                Let's go
+            <span className="wt-num">{WALKTHROUGH_STEPS[walkthroughStep].num}</span>
+            <h2 className="wt-title">{WALKTHROUGH_STEPS[walkthroughStep].title}</h2>
+            <p className="wt-body">{WALKTHROUGH_STEPS[walkthroughStep].body}</p>
+            <div className="wt-actions">
+              <button className="wt-skip" onClick={finishWalkthrough}>skip</button>
+              <button className="wt-next" onClick={advanceWalkthrough}>
+                {walkthroughStep === WALKTHROUGH_STEPS.length - 1 ? "let's go" : "next"}
               </button>
-            </motion.div>
+            </div>
+            <div className="wt-dots">
+              {WALKTHROUGH_STEPS.map((_, i) => (
+                <span key={i} className={`wt-dot${i === walkthroughStep ? ' wt-dot--active' : ''}`} />
+              ))}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -609,7 +692,7 @@ export default function App() {
       {introPhase === 2 && (
         <>
           {/* COMMIT BUTTON - Fixed to upper left corner */}
-          {history.length > 0 && (
+          {(history.length > 0 || walkthroughStep === 2) && (
         <button
           type="button"
           onClick={commitSession}
@@ -623,6 +706,16 @@ export default function App() {
           />
             </button>
           )}
+
+          {/* RESTART BUTTON - Fixed to upper right corner */}
+          <button
+            type="button"
+            onClick={resetSession}
+            className="restart-btn"
+            aria-label="Restart session"
+          >
+            <RotateCcw size={22} strokeWidth={2} />
+          </button>
 
           {/* STATUS BADGE - Fixed to viewport, outside app-inner */}
       <AnimatePresence mode="wait">
@@ -638,7 +731,7 @@ export default function App() {
             left: '4%',
             zIndex: 50
           }}
-          className="flex flex-col items-center gap-3 pointer-events-none select-none"
+          className="flex flex-col items-center gap-3 pointer-events-none select-none status-badge-wrapper"
         >
           <img
             src={statusImageSrc}
@@ -703,17 +796,22 @@ export default function App() {
         <div className="stage">
           <AnimatePresence mode="wait">
              {!currentItem ? (
-              <motion.div 
+              <motion.div
                 key="empty"
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="stage-empty"
+                className="stage-empty stage-empty--blobs"
+                onMouseMove={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  blobTargetRef.current = {
+                    x: (e.clientX - rect.left) / rect.width - 0.5,
+                    y: (e.clientY - rect.top) / rect.height - 0.5,
+                  };
+                }}
+                onMouseLeave={() => { blobTargetRef.current = { x: 0, y: 0 }; }}
               >
-                <img 
-                  src="/images/loading.svg" 
-                  alt="Loading" 
-                  className="stage-empty-image"
-                />
-                <p className="stage-empty-overlay-text">Let's kick it.</p>
+                <div style={{ position: 'absolute', inset: 0, transform: `translate(${blobPos[0].x * 200}px, ${blobPos[0].y * 150}px)` }}><div className="blob blob-1" /></div>
+                <div style={{ position: 'absolute', inset: 0, transform: `translate(${blobPos[1].x * 150}px, ${blobPos[1].y * 110}px)` }}><div className="blob blob-2" /></div>
+                <div style={{ position: 'absolute', inset: 0, transform: `translate(${blobPos[2].x * 260}px, ${blobPos[2].y * 190}px)` }}><div className="blob blob-3" /></div>
               </motion.div>
             ) : (
               <motion.div
@@ -788,15 +886,15 @@ export default function App() {
             hasCaption ? (isLongCaption ? 'controls-caption-long' : 'controls-caption') : ''
           }`}
         >
-          <LiquidButton active={vibeMode} onClick={toggleVibe} demoComplete={demoUsesLeft === 0} />
-          <div className="demo-counter" style={{ marginTop: '10px', textAlign: 'center', fontSize: '13px', opacity: 0.5, fontFamily: 'inherit', letterSpacing: '0.05em' }}>
-            {demoUsesLeft === 0
-              ? CONTACT_EMAIL
-                ? <>want more? reach out → <a href={`mailto:${CONTACT_EMAIL}`} style={{ textDecoration: 'underline' }}>{CONTACT_EMAIL}</a></>
-                : 'demo complete'
-              : demoUsesLeft < DEMO_LIMIT
-                ? `${demoUsesLeft} of ${DEMO_LIMIT} generations left`
-                : null}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+            <LiquidButton active={vibeMode} onClick={toggleVibe} demoComplete={demoUsesLeft === 0} />
+            <div style={{ fontSize: '13px', opacity: 0.55, fontFamily: 'inherit', letterSpacing: '0.04em', textAlign: 'center', lineHeight: '1.6' }}>
+              {demoUsesLeft === 0
+                ? <span>want more or have feedback?<br /><a href={`mailto:${CONTACT_EMAIL}`} style={{ textDecoration: 'underline' }}>{CONTACT_EMAIL}</a></span>
+                : demoUsesLeft < DEMO_LIMIT
+                  ? `${demoUsesLeft} of ${DEMO_LIMIT} generations left`
+                  : null}
+            </div>
           </div>
         </div>
             </motion.div>

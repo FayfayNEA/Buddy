@@ -265,6 +265,10 @@ async def upload_audio(
         "please subscribe",
         "subtitle by",
         "amara.org",
+        # Whisper loop hallucinations
+        "we'll move on to the",
+        "move on to the flow",
+        "move on to the mind",
     )
     if any(p in tl for p in junk_phrases):
         trace_step("filter", rejected=True, reason="junk_phrase")
@@ -292,6 +296,27 @@ async def upload_audio(
             }
         )
         return {"error": "Silence"}
+
+    # Repetition loop detector — catches any Whisper hallucination that repeats a phrase 4+ times.
+    # Split into 4-word ngrams and flag if any appears 4+ times.
+    _words = tl.split()
+    if len(_words) >= 16:
+        _ngrams = [" ".join(_words[i:i+4]) for i in range(len(_words) - 3)]
+        _max_repeat = max(_ngrams.count(ng) for ng in set(_ngrams))
+        if _max_repeat >= 4:
+            trace_step("filter", rejected=True, reason="repetition_loop", max_repeat=_max_repeat)
+            logger.warning("[%s] Repetition loop detected (max_repeat=%d): %s", request_id, _max_repeat, tl[:120])
+            _push_trace(
+                {
+                    "request_id": request_id,
+                    "endpoint": "/upload-audio",
+                    "user_prompt": user_text,
+                    "outcome": "silence",
+                    "reason": "repetition_loop",
+                    "process_steps": process_steps,
+                }
+            )
+            return {"error": "Silence"}
 
     # --- C. PARSE HISTORY ---
     # --- C. PARSE HISTORY ---
