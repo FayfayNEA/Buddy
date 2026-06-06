@@ -13,9 +13,12 @@ from collections import deque
 from datetime import datetime, timezone
 from threading import Lock
 import requests
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 from openai import OpenAI
 import fal_client
@@ -52,6 +55,28 @@ _TRACE_MAX = 200
 _request_trace: deque = deque(maxlen=_TRACE_MAX)
 _trace_lock = Lock()
 
+# Demo token system — each visitor gets DEMO_LIMIT generations, tracked by UUID
+_DEMO_LIMIT = int(os.getenv("DEMO_LIMIT", "3"))
+_demo_tokens: dict = {}  # token -> use_count
+_demo_token_lock = Lock()
+
+
+def _resolve_demo_token(token: str) -> tuple:
+    """Return (token, uses_so_far). Creates a new token if unknown."""
+    with _demo_token_lock:
+        if token and token in _demo_tokens:
+            return token, _demo_tokens[token]
+        new_token = str(uuid.uuid4())
+        _demo_tokens[new_token] = 0
+        return new_token, 0
+
+
+def _increment_demo_token(token: str) -> int:
+    """Increment use count and return the new total."""
+    with _demo_token_lock:
+        _demo_tokens[token] = _demo_tokens.get(token, 0) + 1
+        return _demo_tokens[token]
+
 
 def _push_trace(entry: dict) -> None:
     row = {
@@ -72,7 +97,21 @@ else:
 #   FAL_IMAGE_MODEL=fal-ai/flux-pro/v1.1  (slower)
 FAL_IMAGE_MODEL = os.getenv("FAL_IMAGE_MODEL", "fal-ai/flux/schnell").strip()
 
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+_allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
@@ -84,20 +123,22 @@ def _log_startup():
         bool(os.getenv("FAL_KEY")),
         FAL_IMAGE_MODEL,
     )
-    logger.info("Request trace: GET http://localhost:8000/debug/trace (recent prompts & responses)")
+    logger.info("CORS allowed origins: %s", _allowed_origins)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+_DEBUG_SECRET = os.getenv("DEBUG_SECRET", "")
+
+
+def _check_debug_auth(request: Request):
+    if not _DEBUG_SECRET:
+        raise HTTPException(status_code=404, detail="Not found")
+    if request.headers.get("X-Debug-Secret") != _DEBUG_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 
 @app.get("/debug/status")
-def debug_status():
-    """Process / environment summary (no secrets)."""
+def debug_status(request: Request):
+    _check_debug_auth(request)
     return {
         "backend_pid": os.getpid(),
         "python_version": sys.version.split()[0],
@@ -109,8 +150,8 @@ def debug_status():
 
 
 @app.get("/debug/trace")
-def debug_trace(limit: int = 50):
-    """Recent user transcripts, brain output, and API responses (newest first)."""
+def debug_trace(request: Request, limit: int = 50):
+    _check_debug_auth(request)
     limit = max(1, min(limit, _TRACE_MAX))
     with _trace_lock:
         return {
@@ -146,9 +187,12 @@ def _fal_first_image_url(result):
 
 
 @app.post("/upload-audio")
+@limiter.limit("20/hour")
 async def upload_audio(
-    file: UploadFile = File(...), 
-    history_json: str = Form(default="[]")
+    request: Request,
+    file: UploadFile = File(...),
+    history_json: str = Form(default="[]"),
+    demo_token: str = Form(default=""),
 ):
     request_id = str(uuid.uuid4())[:10]
     t0 = time.perf_counter()
@@ -158,6 +202,11 @@ async def upload_audio(
         process_steps.append({"step": name, **detail})
 
     logger.info("========== /upload-audio [%s] START ==========", request_id)
+
+    # --- DEMO GATE ---
+    resolved_token, uses_so_far = _resolve_demo_token(demo_token)
+    if uses_so_far >= _DEMO_LIMIT:
+        raise HTTPException(status_code=429, detail="Demo limit reached")
 
     # --- A. SETUP ---
     temp_filename = "temp_voice.wav"
@@ -477,6 +526,8 @@ async def upload_audio(
             diagram_code.splitlines()[0][:200] if diagram_code else "",
         )
 
+    uses_now = _increment_demo_token(resolved_token)
+
     result = {
         "transcript": user_text,
         "mode": mode,
@@ -484,6 +535,8 @@ async def upload_audio(
         "image_url": media_url,
         "diagram_code": diagram_code,
         "seed": final_seed,
+        "demo_token": resolved_token,
+        "demo_uses_remaining": max(0, _DEMO_LIMIT - uses_now),
     }
 
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
@@ -541,7 +594,9 @@ async def upload_audio(
     return result
 
 @app.post("/commit-session")
+@limiter.limit("5/hour")
 async def commit_session(
+    request: Request,
     history_json: str = Form(...),
 ):
     """Build a zip (images + session_summary.pdf) and return it as a file download."""

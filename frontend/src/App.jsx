@@ -46,25 +46,32 @@ const STATUS_COLORS = {
   default: '#374151',
 };
 
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
 const ACCESS_NOTICE_KEY = "buddy_access_notice_dismissed";
-const CONTACT_EMAIL = (import.meta.env.VITE_CONTACT_EMAIL || "").trim();
+const CONTACT_EMAIL = (import.meta.env.VITE_CONTACT_EMAIL || "failennaselta@gmail.com").trim();
 const HIDE_ACCESS_NOTICE = import.meta.env.VITE_HIDE_ACCESS_NOTICE === "true";
+const DEMO_TOKEN_KEY = "buddy_demo_token";
+const DEMO_REMAINING_KEY = "buddy_demo_remaining";
+const DEMO_LIMIT = 3;
 
 // Liquid glass button component used to toggle vibe mode.
 // Uses a base #333 fill on the button and an ::after pseudo-element
 // (styled in CSS) to render the Figma gradient + blend modes.
-function LiquidButton({ active, onClick }) {
+function LiquidButton({ active, onClick, demoComplete }) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={demoComplete ? undefined : onClick}
+      disabled={demoComplete}
       className={
         `liquid-btn inline-flex items-center justify-center rounded-full px-6 py-2.5 ` +
-        `w-[640px] h-[60px]` + (active ? ' liquid-btn--active' : '')
+        `w-[640px] h-[60px]` +
+        (active ? ' liquid-btn--active' : '') +
+        (demoComplete ? ' opacity-40 cursor-not-allowed' : '')
       }
     >
       <span className="select-none">
-        {active ? 'Stop Vibing' : 'Start Vibing'}
+        {demoComplete ? 'Demo Complete' : active ? 'Stop Vibing' : 'Start Vibing'}
       </span>
     </button>
   );
@@ -77,6 +84,15 @@ export default function App() {
   const [status, setStatus] = useState("Idle");
   const [isGenerating, setIsGenerating] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [demoToken, setDemoToken] = useState(() => {
+    try { return localStorage.getItem(DEMO_TOKEN_KEY) || ""; } catch { return ""; }
+  });
+  const [demoUsesLeft, setDemoUsesLeft] = useState(() => {
+    try {
+      const stored = localStorage.getItem(DEMO_REMAINING_KEY);
+      return stored !== null ? parseInt(stored, 10) : DEMO_LIMIT;
+    } catch { return DEMO_LIMIT; }
+  });
   // 3-phase intro: 0 = Spiral Down, 1 = Explosion, 2 = Header (main app)
   const [introPhase, setIntroPhase] = useState(0);
   const [showAccessNotice, setShowAccessNotice] = useState(() => {
@@ -372,13 +388,26 @@ export default function App() {
     }));
 
     formData.append("history_json", JSON.stringify(historySummary));
+    formData.append("demo_token", demoToken);
 
     try {
-      const res = await axios.post("http://localhost:8000/upload-audio", formData);
-      
+      const res = await axios.post(`${API_BASE}/upload-audio`, formData);
+
       if (res.data.error) {
           console.warn("Backend ignored audio (silence/hallucination)");
           return;
+      }
+
+      if (res.data.demo_token) {
+        const newToken = res.data.demo_token;
+        const remaining = res.data.demo_uses_remaining ?? 0;
+        setDemoToken(newToken);
+        setDemoUsesLeft(remaining);
+        try {
+          localStorage.setItem(DEMO_TOKEN_KEY, newToken);
+          localStorage.setItem(DEMO_REMAINING_KEY, String(remaining));
+        } catch { /* ignore */ }
+        if (remaining === 0) stopVibeSession();
       }
 
       const newItem = {
@@ -393,9 +422,16 @@ export default function App() {
       });
 
     } catch (err) {
+      if (err?.response?.status === 429) {
+        setDemoUsesLeft(0);
+        try {
+          localStorage.setItem(DEMO_REMAINING_KEY, "0");
+        } catch { /* ignore */ }
+        stopVibeSession();
+        return;
+      }
       console.error("Backend Error:", err);
       setStatus("Backend Error");
-      // Re-throw the error so processQueue can handle it
       throw err;
     }
   };
@@ -418,7 +454,7 @@ export default function App() {
       formData.append("history_json", JSON.stringify(historyData));
 
       const response = await axios.post(
-        "http://localhost:8000/commit-session",
+        `${API_BASE}/commit-session`,
         formData,
         { responseType: "blob" }
       );
@@ -505,24 +541,13 @@ export default function App() {
               transition={{ duration: 0.3, ease: 'easeOut' }}
             >
               <h2 id="access-notice-title" className="access-notice-title">
-                Buddy — on request
+                Buddy — free demo
               </h2>
               <p className="access-notice-body">
-                Live voice and images use paid APIs, so <strong>trying Buddy is by request</strong> to keep
-                usage and cost reasonable. You can still look around the app after you continue.
+                You get <strong>{DEMO_LIMIT} free generations</strong> — speak a request and Buddy will sketch or diagram it in real time. After that, reach out if you want to keep going.
               </p>
-              {CONTACT_EMAIL ? (
-                <p className="access-notice-contact">
-                  <a
-                    className="access-notice-link"
-                    href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Request: Buddy demo')}`}
-                  >
-                    Email to request a demo
-                  </a>
-                </p>
-              ) : null}
               <button type="button" className="access-notice-btn" onClick={dismissAccessNotice}>
-                Continue
+                Let's go
               </button>
             </motion.div>
           </motion.div>
@@ -763,7 +788,16 @@ export default function App() {
             hasCaption ? (isLongCaption ? 'controls-caption-long' : 'controls-caption') : ''
           }`}
         >
-          <LiquidButton active={vibeMode} onClick={toggleVibe} />
+          <LiquidButton active={vibeMode} onClick={toggleVibe} demoComplete={demoUsesLeft === 0} />
+          <div className="demo-counter" style={{ marginTop: '10px', textAlign: 'center', fontSize: '13px', opacity: 0.5, fontFamily: 'inherit', letterSpacing: '0.05em' }}>
+            {demoUsesLeft === 0
+              ? CONTACT_EMAIL
+                ? <>want more? reach out → <a href={`mailto:${CONTACT_EMAIL}`} style={{ textDecoration: 'underline' }}>{CONTACT_EMAIL}</a></>
+                : 'demo complete'
+              : demoUsesLeft < DEMO_LIMIT
+                ? `${demoUsesLeft} of ${DEMO_LIMIT} generations left`
+                : null}
+          </div>
         </div>
             </motion.div>
           </div>
