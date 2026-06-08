@@ -377,12 +377,12 @@ async def upload_audio(
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             response_format={"type": "json_object"},
             messages=messages_payload,
             temperature=0.0,
             top_p=0.0,
-            max_tokens=1000,
+            max_tokens=200,
             presence_penalty=0.0,
             frequency_penalty=0.0,
             logit_bias={},
@@ -461,7 +461,7 @@ async def upload_audio(
                     "prompt": new_prompt,
                     "image_size": "landscape_16_9",
                     "seed": current_seed,
-                    "num_inference_steps": 4,
+                    "num_inference_steps": 3,
                     "acceleration": "high",
                     "enable_safety_checker": True,
                     "output_format": "jpeg",
