@@ -67,7 +67,7 @@
   --text-secondary: #6e6e73;
   --border: rgba(0, 0, 0, 0.08);
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
-  --radius: 18px;
+  --radius: 12px;
   --radius-sm: 12px;
   --accent: #0071e3;
   --accent-hover: #0077ed;
@@ -809,7 +809,7 @@ body {
   z-index: 202;
   width: min(420px, 88vw);
   background: #ffffff;
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 36px 36px 28px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
   display: flex;
