@@ -618,6 +618,111 @@ async def upload_audio(
 
     return result
 
+@app.post("/synthesize")
+@limiter.limit("10/hour")
+async def synthesize(
+    request: Request,
+    histories_json: str = Form(...),
+    demo_token: str = Form(default=""),
+):
+    """Blend multiple speakers' histories into one unified image."""
+    request_id = str(uuid.uuid4())[:10]
+    logger.info("========== /synthesize [%s] START ==========", request_id)
+
+    resolved_token, uses_so_far = _resolve_demo_token(demo_token)
+    if uses_so_far >= _DEMO_LIMIT:
+        raise HTTPException(status_code=429, detail="Demo limit reached")
+
+    try:
+        all_histories = json.loads(histories_json)
+    except Exception:
+        all_histories = []
+
+    if not all_histories or all(len(h) == 0 for h in all_histories):
+        return {"error": "No history to synthesize"}
+
+    # Build a readable summary of each speaker's recent ideas
+    lines = []
+    for i, history in enumerate(all_histories):
+        for item in history[-3:]:
+            transcript = (item.get("transcript") or "").strip()
+            if transcript:
+                lines.append(f"Mind {i + 1}: {transcript}")
+
+    combined = "\n".join(lines)
+    logger.info("[%s] Synthesis input:\n%s", request_id, combined)
+
+    system_prompt = """
+You are a Visual Synthesis AI. Multiple people have been generating ideas separately.
+Your task: create ONE unified image prompt that captures the shared essence of ALL their ideas.
+
+Find the common themes, moods, and imagery across all minds, then blend them into a single coherent visual.
+Do NOT list ideas separately. Synthesize them into one flowing description.
+
+Return JSON ONLY: { "prompt": "..." }
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Synthesize these separate visions into one:\n\n{combined}"},
+            ],
+            temperature=0.5,
+            max_tokens=200,
+        )
+        decision = json.loads(response.choices[0].message.content)
+        new_prompt = decision.get("prompt", "A harmonious blend of multiple creative perspectives unified into one vision")
+    except Exception as e:
+        logger.exception("[%s] Synthesis brain error: %s", request_id, e)
+        new_prompt = "A harmonious convergence of multiple creative minds, their distinct visions merging into one unified world"
+
+    logger.info("[%s] Synthesis prompt: %s", request_id, new_prompt[:200])
+
+    media_url = None
+    final_seed = random.randint(0, 100000000)
+
+    try:
+        fal_endpoint = FAL_IMAGE_MODEL
+        if fal_endpoint not in ("fal-ai/flux/schnell", "fal-ai/flux-pro/v1.1"):
+            fal_endpoint = "fal-ai/flux/schnell"
+
+        args = {
+            "prompt": new_prompt,
+            "image_size": "landscape_16_9",
+            "seed": final_seed,
+            "num_inference_steps": 3,
+            "acceleration": "high",
+            "enable_safety_checker": True,
+            "output_format": "jpeg",
+        }
+        result = await asyncio.wait_for(
+            fal_client.run_async(fal_endpoint, arguments=args, timeout=75.0),
+            timeout=80.0,
+        )
+        media_url = _fal_first_image_url(result)
+        logger.info("[%s] Synthesis image URL: %s", request_id, (media_url or "")[:200])
+    except Exception as e:
+        logger.exception("[%s] Synthesis fal error: %s", request_id, e)
+
+    uses_now = _increment_demo_token(resolved_token)
+
+    logger.info("========== /synthesize [%s] END ==========", request_id)
+    return {
+        "transcript": "Shared Vision",
+        "mode": "SKETCH",
+        "visual_prompt": new_prompt,
+        "image_url": media_url,
+        "diagram_code": None,
+        "seed": final_seed,
+        "demo_token": resolved_token,
+        "demo_uses_remaining": max(0, _DEMO_LIMIT - uses_now),
+        "is_synthesis": True,
+    }
+
+
 @app.post("/commit-session")
 @limiter.limit("5/hour")
 async def commit_session(

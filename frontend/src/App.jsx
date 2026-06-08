@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import RecordRTC from 'recordrtc';
-import hark from 'hark';
-import { ChevronLeft, ChevronRight, Zap, Loader2, Download, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import mermaid from 'mermaid';
 
@@ -13,84 +12,46 @@ mermaid.initialize({
   flowchart: { useMaxWidth: true },
   pie: { useMaxWidth: true },
   xychart: { width: 800, height: 500 },
-  themeVariables: {
-    fontSize: '18px',
-  },
+  themeVariables: { fontSize: '18px' },
 });
 
-// Map high-level status text to badge image assets
-const STATUS_IMAGES = {
-  'Idle': '/images/Off.svg',
-  'Hearing': '/images/listening.svg',
-  'Listening': '/images/listening.svg',
-  'Waiting': '/images/waiting.svg',
-  'Processing': '/images/generating.svg',
-  'Generating': '/images/generating.svg',
-  'Zipping': '/images/generating.svg',
-  'Done': '/images/generated.svg',
-  'Saved!': '/images/generated.svg',
-  default: '/images/Off.svg',
-};
-
-// Status label colors: Idle (neutral), Hearing/Listening (red), Waiting (blue), Thinking (orange), Done (green)
-const STATUS_COLORS = {
-  Idle: '#374151',
-  Hearing: '#dc2626',
-  Listening: '#dc2626',
-  Waiting: '#2563eb',
-  Processing: '#ea580c',
-  Generating: '#ea580c',
-  Zipping: '#ea580c',
-  Done: '#16a34a',
-  'Saved!' : '#16a34a',
-  default: '#374151',
-};
-
-const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
-const ACCESS_NOTICE_KEY = "buddy_access_notice_dismissed";
-const CONTACT_EMAIL = (import.meta.env.VITE_CONTACT_EMAIL || "failennaselta@gmail.com").trim();
-const HIDE_ACCESS_NOTICE = import.meta.env.VITE_HIDE_ACCESS_NOTICE === "true";
-const DEMO_TOKEN_KEY = "buddy_demo_token";
-const DEMO_REMAINING_KEY = "buddy_demo_remaining";
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+const CONTACT_EMAIL = (import.meta.env.VITE_CONTACT_EMAIL || 'failennaselta@gmail.com').trim();
+const DEMO_TOKEN_KEY = 'buddy_demo_token';
+const DEMO_REMAINING_KEY = 'buddy_demo_remaining';
 const DEMO_LIMIT = 3;
-const WALKTHROUGH_KEY = "buddy_walkthrough_done";
 
-const WALKTHROUGH_STEPS = [
-  {
-    num: "01",
-    title: "Meet Buddy",
-    body: "Your AI design partner. Speak an idea and Buddy turns it into a diagram or generated image in real time.",
-    cardStyle: { bottom: "10%", right: "4%" },
-  },
-  {
-    num: "02",
-    title: "Status indicator",
-    body: "This tells you what Buddy is doing. It cycles through Idle, Hearing, Listening, Generating, and Done as you work.",
-    cardStyle: { bottom: "18%", left: "4%" },
-  },
-  {
-    num: "03",
-    title: "Download your session",
-    body: "When you are done creating, hit this button to export everything as a ZIP file with a PDF summary inside.",
-    cardStyle: { top: "100px", left: "4%" },
-  },
-  {
-    num: "04",
-    title: "Reset",
-    body: "This clears your canvas and gives you a fresh start. Your generation count carries over.",
-    cardStyle: { top: "100px", right: "4%" },
-  },
-  {
-    num: "05",
-    title: "Your canvas",
-    body: `Speak a request and it appears here. You get ${DEMO_LIMIT} free generations. Hit Start Vibing below and describe anything.`,
-    cardStyle: { top: "112px", left: "50%", transform: "translateX(-50%)" },
-  },
-];
+const SPEAKER_COLORS = ['#7c5cfc', '#0891b2', '#d97706', '#16a34a', '#dc2626', '#9333ea'];
 
-// Liquid glass button component used to toggle vibe mode.
-// Uses a base #333 fill on the button and an ::after pseudo-element
-// (styled in CSS) to render the Figma gradient + blend modes.
+// Find the dominant vocal frequency (80–320 Hz) in FFT data.
+function detectDominantPitch(analyser, sampleRate) {
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Float32Array(bufferLength);
+  analyser.getFloatFrequencyData(dataArray);
+  const binSize = sampleRate / (2 * bufferLength);
+  const minBin = Math.max(1, Math.floor(80 / binSize));
+  const maxBin = Math.min(bufferLength - 1, Math.floor(320 / binSize));
+  let maxVal = -Infinity;
+  let maxBinIdx = minBin;
+  for (let i = minBin; i <= maxBin; i++) {
+    if (dataArray[i] > maxVal) { maxVal = dataArray[i]; maxBinIdx = i; }
+  }
+  if (maxVal < -55) return null;
+  return maxBinIdx * binSize;
+}
+
+// Map median pitch for a 5-second window to one of N speaker lanes.
+function assignSpeaker(pitchSamples, count) {
+  if (count <= 1 || pitchSamples.length === 0) return 0;
+  const sorted = [...pitchSamples].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const MIN = 80, MAX = 320;
+  const clamped = Math.max(MIN, Math.min(MAX - 1, median));
+  const bucket = Math.floor((clamped - MIN) / (MAX - MIN) * count);
+  return Math.min(bucket, count - 1);
+}
+
+// ─── Liquid vibe button ───────────────────────────────────────────────────────
 function LiquidButton({ active, onClick, demoComplete }) {
   return (
     <button
@@ -98,8 +59,7 @@ function LiquidButton({ active, onClick, demoComplete }) {
       onClick={demoComplete ? undefined : onClick}
       disabled={demoComplete}
       className={
-        `liquid-btn inline-flex items-center justify-center rounded-full px-6 py-2.5 ` +
-        `w-[640px] h-[60px]` +
+        `liquid-btn inline-flex items-center justify-center rounded-full px-6 py-2.5 w-[640px] h-[60px]` +
         (active ? ' liquid-btn--active' : '') +
         (demoComplete ? ' opacity-40 cursor-not-allowed' : '')
       }
@@ -111,23 +71,207 @@ function LiquidButton({ active, onClick, demoComplete }) {
   );
 }
 
-export default function App() {
-  const [history, setHistory] = useState([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [vibeMode, setVibeMode] = useState(false);
-  const [status, setStatus] = useState("Idle");
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [imgError, setImgError] = useState(false);
-  const rippleThrottleRef = useRef(null);
+// ─── Participant selector ─────────────────────────────────────────────────────
+function ParticipantSelector({ onSelect }) {
+  const [selected, setSelected] = useState(2);
+  return (
+    <motion.div
+      className="participant-selector"
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: 'easeOut' }}
+    >
+      <img src="/images/buddyname.svg" alt="Buddy" className="participant-logo" />
+      <h2 className="participant-heading">How many minds are in the room?</h2>
+      <div className="participant-nums">
+        {[1, 2, 3, 4, 5, 6].map(n => (
+          <button
+            key={n}
+            className={`participant-num-btn${selected === n ? ' participant-num-btn--active' : ''}`}
+            onClick={() => setSelected(n)}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+      <button className="participant-enter-btn" onClick={() => onSelect(selected)}>
+        Enter
+      </button>
+    </motion.div>
+  );
+}
 
-  // Blob water tracking — viscous lerp toward cursor
+// ─── Single speaker panel ─────────────────────────────────────────────────────
+function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, status, isGenerating, blobPos, isMerged }) {
+  const mermaidNodeRef = useRef(null);
+  const [imgError, setImgError] = useState(false);
+  const currentItem = history[currentIndex];
+  const color = isMerged ? null : SPEAKER_COLORS[index % SPEAKER_COLORS.length];
+  const isActive = isGenerating || status === 'Hearing';
+
+  useEffect(() => { setImgError(false); }, [currentIndex]);
+
+  const runMermaid = (el, code) => {
+    if (!el || !code) return;
+    if (el.getAttribute('data-processed')) return;
+    const clean = code.replace(/```mermaid/g, '').replace(/```/g, '').trim();
+    if (!clean) return;
+    el.innerHTML = clean;
+    el.removeAttribute('data-processed');
+    mermaid.run({ nodes: [el], suppressErrors: false }).catch(err => {
+      el.innerHTML = `<div style="color:red;padding:20px;text-align:center">⚠️ ${err.message}</div>`;
+    });
+  };
+
+  const setMermaidRef = (el) => {
+    mermaidNodeRef.current = el;
+    if (el && currentItem?.mode === 'DIAGRAM' && currentItem?.diagram_code) {
+      runMermaid(el, currentItem.diagram_code);
+    }
+  };
+
+  const showLabel = isMerged || count > 1;
+
+  return (
+    <div className="speaker-panel">
+      {showLabel && (
+        <div className={`speaker-label${isMerged ? ' speaker-label--merged' : ''}`}>
+          {!isMerged && <span className="speaker-label-dot" style={{ background: color }} />}
+          {isMerged
+            ? <span className="speaker-label-text speaker-label-text--merged">Shared Vision</span>
+            : <span className="speaker-label-text">Mind {index + 1}</span>
+          }
+          {isActive && <span className="speaker-active-dot" style={isMerged ? {} : { background: color }} />}
+        </div>
+      )}
+
+      <div className="stage speaker-stage">
+        <AnimatePresence mode="wait">
+          {!currentItem ? (
+            <motion.div
+              key="empty"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="stage-empty stage-empty--blobs"
+            >
+              {blobPos && (
+                <>
+                  <div style={{ position: 'absolute', inset: 0, transform: `translate(${blobPos[0].x * 200}px,${blobPos[0].y * 150}px)` }}><div className="blob blob-1" /></div>
+                  <div style={{ position: 'absolute', inset: 0, transform: `translate(${blobPos[1].x * 150}px,${blobPos[1].y * 110}px)` }}><div className="blob blob-2" /></div>
+                  <div style={{ position: 'absolute', inset: 0, transform: `translate(${blobPos[2].x * 260}px,${blobPos[2].y * 190}px)` }}><div className="blob blob-3" /></div>
+                </>
+              )}
+            </motion.div>
+          ) : (
+            <motion.div
+              key={currentIndex}
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="stage-content"
+            >
+              {currentItem.mode === 'DIAGRAM' ? (
+                <div key={`diagram-${currentItem.id}`} className="stage-diagram">
+                  <div ref={setMermaidRef} className="mermaid" />
+                </div>
+              ) : !currentItem.image_url ? (
+                <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-black/80">
+                  <div className="text-4xl mb-4">⚠️</div>
+                  <p className="text-red-400 font-bold mb-2">Image Generation Failed</p>
+                </div>
+              ) : imgError ? (
+                <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-black/80">
+                  <div className="text-4xl mb-4">❌</div>
+                  <p className="text-red-400 font-bold mb-2">Failed to Load</p>
+                </div>
+              ) : currentItem.image_url?.endsWith('.mp4') ? (
+                <video src={currentItem.image_url} className="stage-media" autoPlay loop muted playsInline />
+              ) : (
+                <img src={currentItem.image_url} alt="Generated" className="stage-media" onError={() => setImgError(true)} />
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {history.length > 1 && (
+          <>
+            <button type="button" onClick={onPrev} className="stage-nav stage-nav-prev"><ChevronLeft /></button>
+            <button type="button" onClick={onNext} className="stage-nav stage-nav-next"><ChevronRight /></button>
+          </>
+        )}
+
+        {isGenerating && (
+          <div
+            className="panel-generating-ring"
+            style={isMerged ? { '--ring-color': '#7c5cfc' } : { '--ring-color': color }}
+          />
+        )}
+      </div>
+
+      {currentItem && (
+        <div className={`stage-caption panel-caption${currentItem.transcript?.length > 80 ? ' stage-caption-long' : ''}`}>
+          {history.length > 1 && (
+            <span className="stage-caption-index">{currentIndex + 1}/{history.length}</span>
+          )}
+          <span className="stage-caption-text">"{currentItem.transcript}"</span>
+        </div>
+      )}
+
+      {(status === 'Generating' || status === 'Done') && (
+        <div
+          className="panel-status"
+          style={{ color: status === 'Done' ? '#16a34a' : (isMerged ? '#7c5cfc' : color) }}
+        >
+          {status === 'Generating' ? 'Generating...' : 'Done'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+export default function App() {
+  const [introPhase, setIntroPhase] = useState(0);
+  const [vibeMode, setVibeMode] = useState(false);
+  const [participantCount, setParticipantCount] = useState(null);
+
+  // Per-speaker state
+  const [speakerHistories, setSpeakerHistories] = useState([]);
+  const [speakerIndices, setSpeakerIndices] = useState([]);
+  const [speakerStatuses, setSpeakerStatuses] = useState([]);
+  const [speakerGenerating, setSpeakerGenerating] = useState([]);
+
+  // Merge state
+  const [mergeMode, setMergeMode] = useState(false);
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const mergeModeRef = useRef(false);
+  // Preserved so merged channel can reference original speaker ideas for context
+  const originalHistoriesRef = useRef([]);
+
+  // Stale-closure-safe refs
+  const speakerHistoryRefs = useRef([]);
+  const audioQueuesRef = useRef([]);
+  const isProcessingRefs = useRef([]);
+  const participantCountRef = useRef(1);
+
+  // Audio pipeline
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const analyserRef = useRef(null);
+  const pitchSamplesRef = useRef([]);
+  const sliceTimerRef = useRef(null);
+  const pitchSampleIntervalRef = useRef(null);
+  const hearingResetRef = useRef(null);
+
+  // Blob water animation
   const blobTargetRef = useRef({ x: 0, y: 0 });
   const blobPosRef = useRef([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }]);
   const blobRafRef = useRef(null);
   const [blobPos, setBlobPos] = useState([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }]);
 
   useEffect(() => {
-    const speeds = [0.04, 0.07, 0.12]; // responsive but still lags behind
+    const speeds = [0.04, 0.07, 0.12];
     const loop = () => {
       const t = blobTargetRef.current;
       const next = blobPosRef.current.map((p, i) => ({
@@ -142,761 +286,496 @@ export default function App() {
     return () => cancelAnimationFrame(blobRafRef.current);
   }, []);
 
-  const handleBlobMouseMove = () => {};
-
+  // Demo token
   const [demoToken, setDemoToken] = useState(() => {
-    try { return localStorage.getItem(DEMO_TOKEN_KEY) || ""; } catch { return ""; }
+    try { return localStorage.getItem(DEMO_TOKEN_KEY) || ''; } catch { return ''; }
   });
   const [demoUsesLeft, setDemoUsesLeft] = useState(() => {
     try {
-      const stored = localStorage.getItem(DEMO_REMAINING_KEY);
-      return stored !== null ? parseInt(stored, 10) : DEMO_LIMIT;
+      const s = localStorage.getItem(DEMO_REMAINING_KEY);
+      return s !== null ? parseInt(s, 10) : DEMO_LIMIT;
     } catch { return DEMO_LIMIT; }
   });
-  // 3-phase intro: 0 = Spiral Down, 1 = Explosion, 2 = Header (main app)
-  const [introPhase, setIntroPhase] = useState(0);
-  const [showAccessNotice, setShowAccessNotice] = useState(false);
-  const [walkthroughStep, setWalkthroughStep] = useState(() => {
-    const forceOn = new URLSearchParams(window.location.search).has("wt");
-    try { return (forceOn || !localStorage.getItem(WALKTHROUGH_KEY)) ? 0 : null; } catch { return 0; }
-  });
 
-  const finishWalkthrough = () => {
-    try { localStorage.setItem(WALKTHROUGH_KEY, "1"); } catch { /* ignore */ }
-    setWalkthroughStep(null);
-  };
-  const advanceWalkthrough = () => {
-    if (walkthroughStep === null) return;
-    if (walkthroughStep >= WALKTHROUGH_STEPS.length - 1) finishWalkthrough();
-    else setWalkthroughStep(s => s + 1);
-  };
-
-  // --- REFS ---
-  const recorderRef = useRef(null);
-  const streamRef = useRef(null);
-  const mermaidRef = useRef(null);
-  
-  // FIX 1: HISTORY REF
-  // We use this to cheat the "stale closure" problem. 
-  // The recorder will look at this Ref instead of the State.
-  const historyRef = useRef([]);
-
-  // QUEUE SYSTEM
-  const audioQueueRef = useRef([]); 
-  const isProcessingRef = useRef(false);
-  const silenceTimeoutRef = useRef(null);
-
-  // --- SYNC REF WITH STATE ---
+  // Intro timing
   useEffect(() => {
-    historyRef.current = history;
-  }, [history]);
-
-  useEffect(() => {
-    setImgError(false);
-  }, [currentIndex]);
-
-  // --- INTRO PHASE TIMING ---
-  useEffect(() => {
-    if (introPhase === 0) {
-      // Phase 0: Spiral runs 1.5s, then advance to Phase 1
-      const t = setTimeout(() => setIntroPhase(1), 1500);
-      return () => clearTimeout(t);
-    }
-    if (introPhase === 1) {
-      // Phase 1: Explosion visible, short delay then advance to Phase 2
-      const t = setTimeout(() => setIntroPhase(2), 800);
-      return () => clearTimeout(t);
-    }
+    if (introPhase === 0) { const t = setTimeout(() => setIntroPhase(1), 1500); return () => clearTimeout(t); }
+    if (introPhase === 1) { const t = setTimeout(() => setIntroPhase(2), 800); return () => clearTimeout(t); }
   }, [introPhase]);
 
-  const dismissAccessNotice = () => {
-    try {
-      localStorage.setItem(ACCESS_NOTICE_KEY, "1");
-    } catch {
-      /* ignore */
-    }
-    setShowAccessNotice(false);
-  };
-
-  // --- 1. RENDER DIAGRAMS ---
-  const runMermaidOnMount = (el, diagramCode) => {
-    if (!el || !diagramCode) return;
-    if (el.getAttribute('data-processed')) return;
-    
-    // Clean code again just in case
-    const cleanCode = diagramCode
-      .replace(/```mermaid/g, '')
-      .replace(/```/g, '')
-      .trim();
-      
-    if (!cleanCode) return;
-    
-    el.innerHTML = cleanCode;
-    el.removeAttribute('data-processed');
-    
-    mermaid.run({ nodes: [el], suppressErrors: false }).catch((err) => {
-        el.innerHTML = `
-          <div style="color:red; text-align:center; padding:20px;">
-            <p>⚠️ Diagram Error</p>
-            <p style="font-size:12px; opacity:0.7;">${err.message}</p>
-            <p style="font-size:10px; margin-top:10px; font-family:monospace;">${cleanCode.substring(0,50)}...</p>
-          </div>
-        `;
-      });
-  };
-
-  const setMermaidRef = (el) => {
-    mermaidRef.current = el;
-    const item = history[currentIndex];
-    if (el && item?.mode === "DIAGRAM" && item?.diagram_code) {
-      runMermaidOnMount(el, item.diagram_code);
-    }
-  };
-
-  // --- 2. KEYBOARD NAV ---
+  // Keep speakerHistoryRefs in sync (one render behind — intentional for index calc in sendAudio)
   useEffect(() => {
-    const handleKey = (e) => {
-      if (e.key === 'ArrowLeft') prevItem();
-      if (e.key === 'ArrowRight') nextItem();
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [history]); // This one can depend on history state safely
+    speakerHistories.forEach((h, i) => { speakerHistoryRefs.current[i] = h; });
+  }, [speakerHistories]);
 
-  const prevItem = () => setCurrentIndex(c => Math.max(0, c - 1));
-  const nextItem = () => setCurrentIndex(c => Math.min(history.length - 1, c + 1));
-
-  // --- DIAL LOGIC ---
-  const dialRef = useRef(null);
-  const dialAngleRef = useRef(0);
-  const dialStartRef = useRef(null);
-  const ROTATION_THRESHOLD = 25;
-
-  const getAngle = (clientX, clientY) => {
-    if (!dialRef.current) return 0;
-    const rect = dialRef.current.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    return Math.atan2(clientY - cy, clientX - cx) * (180 / Math.PI);
+  // ── Initialize N speaker lanes ─────────────────────────────────────────────
+  const initializeSpeakers = (count) => {
+    participantCountRef.current = count;
+    const empty = Array.from({ length: count }, () => []);
+    setSpeakerHistories(empty);
+    setSpeakerIndices(new Array(count).fill(0));
+    setSpeakerStatuses(new Array(count).fill('Idle'));
+    setSpeakerGenerating(new Array(count).fill(false));
+    speakerHistoryRefs.current = Array.from({ length: count }, () => []);
+    audioQueuesRef.current = Array.from({ length: count }, () => []);
+    isProcessingRefs.current = new Array(count).fill(false);
+    setParticipantCount(count);
   };
 
-  const handleDialPointerDown = (e) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    dialStartRef.current = { angle: getAngle(e.clientX, e.clientY), index: currentIndex };
-    dialAngleRef.current = 0;
-  };
+  // ── Per-speaker generation queue ───────────────────────────────────────────
+  const processQueue = async (speakerIdx) => {
+    if (isProcessingRefs.current[speakerIdx] || !audioQueuesRef.current[speakerIdx]?.length) return;
+    isProcessingRefs.current[speakerIdx] = true;
+    const blob = audioQueuesRef.current[speakerIdx].shift();
 
-  const handleDialPointerMove = (e) => {
-    if (dialStartRef.current == null) return;
-    const currentAngle = getAngle(e.clientX, e.clientY);
-    let delta = currentAngle - dialStartRef.current.angle;
-    if (delta > 180) delta -= 360;
-    if (delta < -180) delta += 360;
-    dialAngleRef.current += delta;
-    dialStartRef.current.angle = currentAngle;
-    if (dialAngleRef.current >= ROTATION_THRESHOLD && history.length > 1) {
-      nextItem();
-      dialAngleRef.current = 0;
-    } else if (dialAngleRef.current <= -ROTATION_THRESHOLD && history.length > 1) {
-      prevItem();
-      dialAngleRef.current = 0;
-    }
-  };
+    setSpeakerStatuses(p => { const n = [...p]; n[speakerIdx] = 'Generating'; return n; });
+    setSpeakerGenerating(p => { const n = [...p]; n[speakerIdx] = true; return n; });
 
-  const handleDialPointerUp = () => {
-    dialStartRef.current = null;
-  };
-
-  // --- 3. QUEUE PROCESSOR ---
-  const processQueue = async () => {
-    if (isProcessingRef.current || audioQueueRef.current.length === 0) return;
-
-    isProcessingRef.current = true;
-    const nextBlob = audioQueueRef.current.shift();
-    
-    setStatus("Generating");
-    setIsGenerating(true); // Show loader animation
-
-    // Add a timeout to prevent hanging indefinitely
     const timeoutId = setTimeout(() => {
-      console.error("Request timeout - resetting generating state");
-      setIsGenerating(false);
-      setStatus("Error");
-      isProcessingRef.current = false;
-    }, 60000); // 60 second timeout
+      setSpeakerGenerating(p => { const n = [...p]; n[speakerIdx] = false; return n; });
+      setSpeakerStatuses(p => { const n = [...p]; n[speakerIdx] = 'Idle'; return n; });
+      isProcessingRefs.current[speakerIdx] = false;
+    }, 60000);
 
     try {
-        await sendAudio(nextBlob);
-        clearTimeout(timeoutId);
+      await sendAudio(blob, speakerIdx);
+      clearTimeout(timeoutId);
     } catch (e) {
-        clearTimeout(timeoutId);
-        console.error("Queue Error:", e);
-        setStatus("Error");
+      clearTimeout(timeoutId);
+      console.error('Speaker', speakerIdx, 'queue error:', e);
     } finally {
-        clearTimeout(timeoutId);
-        isProcessingRef.current = false;
-        setIsGenerating(false);
-        if (audioQueueRef.current.length > 0) {
-            processQueue();
-        } else {
-            // Briefly show a "Done" state before returning to listening
-            setStatus("Done");
-            setTimeout(() => {
-              setStatus((prev) => (prev === "Done" ? "Listening" : prev));
-            }, 2000);
-        }
+      clearTimeout(timeoutId);
+      isProcessingRefs.current[speakerIdx] = false;
+      setSpeakerGenerating(p => { const n = [...p]; n[speakerIdx] = false; return n; });
+      if (audioQueuesRef.current[speakerIdx]?.length > 0) {
+        processQueue(speakerIdx);
+      } else {
+        setSpeakerStatuses(p => { const n = [...p]; n[speakerIdx] = 'Done'; return n; });
+        setTimeout(() => {
+          setSpeakerStatuses(p => {
+            const n = [...p];
+            if (n[speakerIdx] === 'Done') n[speakerIdx] = 'Listening';
+            return n;
+          });
+        }, 2000);
+      }
     }
   };
 
-  // --- 4. VIBE MODE LOGIC ---
-  const startVibeSession = async () => {
-    try {
-      // Request audio with noise suppression and echo cancellation to reduce background noise
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 44100,
-          channelCount: 1
-        } 
-      });
-      streamRef.current = stream;
-      
-      recorderRef.current = new RecordRTC(stream, { 
-        type: 'audio', 
-        mimeType: 'audio/wav', 
-        recorderType: RecordRTC.StereoAudioRecorder,
-        numberOfAudioChannels: 1 
-      });
-      recorderRef.current.startRecording();
-      
-      // Use a slightly higher threshold to filter out background noise
-      const speech = hark(stream, { interval: 100, threshold: -45 });
-      
-      speech.on('stopped_speaking', () => {
-        if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
-        
-        setStatus("Waiting");
-        
-        silenceTimeoutRef.current = setTimeout(() => {
-          silenceTimeoutRef.current = null;
-          setStatus("Processing");
-          
-          if (recorderRef.current) {
-              recorderRef.current.stopRecording(() => {
-                  const blob = recorderRef.current.getBlob();
-                  // Ignore tiny blips
-                  if (blob.size > 2000) { 
-                      audioQueueRef.current.push(blob);
-                      processQueue();
-                  }
-                  
-                  if (streamRef.current?.active) {
-                      recorderRef.current.reset();
-                      recorderRef.current.startRecording();
-                      setStatus("Listening");
-                  }
-              });
-          }
-        }, 2000); // 2 seconds silence to trigger
-      });
-
-      speech.on('speaking', () => {
-        if (silenceTimeoutRef.current) {
-          clearTimeout(silenceTimeoutRef.current);
-          silenceTimeoutRef.current = null;
-        }
-        setStatus("Hearing");
-      });
-      setStatus("Listening");
-
-    } catch (err) {
-      console.error(err);
-      setStatus("Mic Error");
-    }
-  };
-
-  const stopVibeSession = () => {
-    setVibeMode(false);
-    if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
-    if (recorderRef.current) recorderRef.current.stopRecording();
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-    // Reset generating state if stuck
-    setIsGenerating(false);
-    isProcessingRef.current = false;
-    setStatus("Idle");
-  };
-
-  const toggleVibe = () => {
-    if (vibeMode) stopVibeSession();
-    else {
-      setVibeMode(true);
-      startVibeSession();
-    }
-  };
-
-  const resetSession = () => {
-    stopVibeSession();
-    setHistory([]);
-    historyRef.current = [];
-    setCurrentIndex(0);
-  };
-
-  // --- 5. SEND TO BACKEND (THE CRITICAL FIX) ---
-  const sendAudio = async (blob) => {
+  // ── Send a 5-second chunk; merged channel uses combined history for context ─
+  const sendAudio = async (blob, speakerIdx) => {
     const formData = new FormData();
-    formData.append("file", blob, "voice.wav");
+    formData.append('file', blob, 'voice.wav');
 
-    // FIX 2: Use historyRef.current instead of history state
-    // This ensures we always get the LATEST history, even inside closures
-    const currentHistory = historyRef.current; 
-    
-    const historySummary = currentHistory.slice(-5).map(item => ({
-        id: item.id || Date.now(),
-        transcript: item.transcript,
-        visual_prompt: item.visual_prompt, // Backend needs this to know what to edit
-        image_url: item.image_url,
-        mode: item.mode,
-        seed: item.seed // FIX 3: Pass the seed back!
+    let history;
+    if (mergeModeRef.current) {
+      // Blend original speaker histories + merged channel history for richer context
+      const origContext = originalHistoriesRef.current.flatMap(h => h.slice(-2));
+      const mergedContext = speakerHistoryRefs.current[0] || [];
+      history = [...origContext, ...mergedContext].slice(-5);
+    } else {
+      history = speakerHistoryRefs.current[speakerIdx] || [];
+    }
+
+    const historySummary = history.slice(-5).map(item => ({
+      id: item.id || Date.now(),
+      transcript: item.transcript,
+      visual_prompt: item.visual_prompt,
+      image_url: item.image_url,
+      mode: item.mode,
+      seed: item.seed,
     }));
 
-    formData.append("history_json", JSON.stringify(historySummary));
-    formData.append("demo_token", demoToken);
+    formData.append('history_json', JSON.stringify(historySummary));
+    formData.append('demo_token', demoToken);
 
     try {
       const res = await axios.post(`${API_BASE}/upload-audio`, formData);
-
-      if (res.data.error) {
-          console.warn("Backend ignored audio (silence/hallucination)");
-          return;
-      }
+      if (res.data.error) return;
 
       if (res.data.demo_token) {
-        const newToken = res.data.demo_token;
         const remaining = res.data.demo_uses_remaining ?? 0;
-        setDemoToken(newToken);
+        setDemoToken(res.data.demo_token);
         setDemoUsesLeft(remaining);
         try {
-          localStorage.setItem(DEMO_TOKEN_KEY, newToken);
+          localStorage.setItem(DEMO_TOKEN_KEY, res.data.demo_token);
           localStorage.setItem(DEMO_REMAINING_KEY, String(remaining));
         } catch { /* ignore */ }
         if (remaining === 0) stopVibeSession();
       }
 
-      const newItem = {
-          ...res.data,
-          id: Date.now()
-      };
-
-      setHistory(prev => {
-        const newHistory = [...prev, newItem];
-        setCurrentIndex(newHistory.length - 1);
-        return newHistory;
-      });
+      const newItem = { ...res.data, id: Date.now() };
+      // Ref lags one render — its length equals the pre-push length, which is the new item's index
+      const newIdx = speakerHistoryRefs.current[speakerIdx]?.length || 0;
+      setSpeakerHistories(prev => prev.map((h, i) => i === speakerIdx ? [...h, newItem] : h));
+      setSpeakerIndices(prev => { const n = [...prev]; n[speakerIdx] = newIdx; return n; });
 
     } catch (err) {
       if (err?.response?.status === 429) {
         setDemoUsesLeft(0);
-        try {
-          localStorage.setItem(DEMO_REMAINING_KEY, "0");
-        } catch { /* ignore */ }
+        try { localStorage.setItem(DEMO_REMAINING_KEY, '0'); } catch { /* ignore */ }
         stopVibeSession();
         return;
       }
-      console.error("Backend Error:", err);
-      setStatus("Backend Error");
       throw err;
     }
   };
 
-  // --- 6. COMMIT SESSION (download ZIP to user's machine) ---
-  const commitSession = async () => {
-    if (history.length === 0) return;
-    
-    setStatus("Zipping"); 
-    
+  // ── Recording: 5-second rolling slices ────────────────────────────────────
+  const startVibeSession = async () => {
     try {
-      const historyData = history.map(item => ({
-        transcript: item.transcript,
-        visual_prompt: item.visual_prompt,
-        image_url: item.image_url,
-        mode: item.mode,
-      }));
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, sampleRate: 44100, channelCount: 1 },
+      });
+      streamRef.current = stream;
 
-      const formData = new FormData();
-      formData.append("history_json", JSON.stringify(historyData));
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtxRef.current = audioCtx;
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.8;
+      source.connect(analyser);
+      analyserRef.current = analyser;
 
-      const response = await axios.post(
-        `${API_BASE}/commit-session`,
-        formData,
-        { responseType: "blob" }
-      );
+      recorderRef.current = new RecordRTC(stream, {
+        type: 'audio', mimeType: 'audio/wav',
+        recorderType: RecordRTC.StereoAudioRecorder, numberOfAudioChannels: 1,
+      });
+      recorderRef.current.startRecording();
+      pitchSamplesRef.current = [];
 
-      const blob = response.data;
-      const cd = response.headers["content-disposition"] || "";
-      const m = cd.match(/filename="?([^";]+)"?/i);
-      const filename =
-        m?.[1]?.trim() || `consensus-session-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.zip`;
+      pitchSampleIntervalRef.current = setInterval(() => {
+        if (!analyserRef.current || !audioCtxRef.current) return;
+        const timeData = new Float32Array(analyserRef.current.fftSize);
+        analyserRef.current.getFloatTimeDomainData(timeData);
+        const rms = Math.sqrt(timeData.reduce((s, v) => s + v * v, 0) / timeData.length);
+        if (rms < 0.015) return;
+        const pitch = detectDominantPitch(analyserRef.current, audioCtxRef.current.sampleRate);
+        if (pitch) pitchSamplesRef.current.push(pitch);
+        setSpeakerStatuses(p => p.map(s => s === 'Listening' ? 'Hearing' : s));
+        clearTimeout(hearingResetRef.current);
+        hearingResetRef.current = setTimeout(() => {
+          setSpeakerStatuses(p => p.map(s => s === 'Hearing' ? 'Listening' : s));
+        }, 400);
+      }, 150);
 
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      sliceTimerRef.current = setInterval(() => {
+        if (!recorderRef.current || !streamRef.current?.active) return;
+        recorderRef.current.stopRecording(() => {
+          const blob = recorderRef.current.getBlob();
+          const samples = pitchSamplesRef.current.splice(0);
+          const count = participantCountRef.current;
+          // In merge mode, all audio goes to the single unified channel
+          const speakerIdx = mergeModeRef.current ? 0 : assignSpeaker(samples, count);
 
-      setStatus("Saved!");
+          if (blob.size > 5000) {
+            if (!audioQueuesRef.current[speakerIdx]) audioQueuesRef.current[speakerIdx] = [];
+            audioQueuesRef.current[speakerIdx].push(blob);
+            processQueue(speakerIdx);
+          }
 
-      setTimeout(() => {
-        setStatus(vibeMode ? "Listening" : "Idle");
-      }, 2000);
+          if (streamRef.current?.active) {
+            recorderRef.current.reset();
+            recorderRef.current.startRecording();
+          }
+        });
+      }, 5000);
+
+      setSpeakerStatuses(new Array(participantCountRef.current).fill('Listening'));
 
     } catch (err) {
-      console.error("Commit Error:", err);
-      let detail = err?.message || "Export failed";
-      const data = err?.response?.data;
-      if (data instanceof Blob) {
+      console.error('Mic error:', err);
+    }
+  };
+
+  const stopVibeSession = () => {
+    setVibeMode(false);
+    if (sliceTimerRef.current) { clearInterval(sliceTimerRef.current); sliceTimerRef.current = null; }
+    if (pitchSampleIntervalRef.current) { clearInterval(pitchSampleIntervalRef.current); pitchSampleIntervalRef.current = null; }
+    if (hearingResetRef.current) clearTimeout(hearingResetRef.current);
+    if (recorderRef.current) recorderRef.current.stopRecording(() => {});
+    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close();
+    audioCtxRef.current = null;
+    analyserRef.current = null;
+    isProcessingRefs.current = isProcessingRefs.current.map(() => false);
+    setSpeakerGenerating(p => p.map(() => false));
+    setSpeakerStatuses(p => p.map(() => 'Idle'));
+  };
+
+  const toggleVibe = () => {
+    if (vibeMode) stopVibeSession();
+    else { setVibeMode(true); startVibeSession(); }
+  };
+
+  const resetSession = () => {
+    stopVibeSession();
+    mergeModeRef.current = false;
+    setMergeMode(false);
+    originalHistoriesRef.current = [];
+    const count = participantCountRef.current;
+    const empty = Array.from({ length: count }, () => []);
+    setSpeakerHistories(empty);
+    setSpeakerIndices(new Array(count).fill(0));
+    setSpeakerStatuses(new Array(count).fill('Idle'));
+    setSpeakerGenerating(new Array(count).fill(false));
+    speakerHistoryRefs.current = Array.from({ length: count }, () => []);
+    audioQueuesRef.current = Array.from({ length: count }, () => []);
+    isProcessingRefs.current = new Array(count).fill(false);
+  };
+
+  // ── Merge all speakers into one unified channel ────────────────────────────
+  const triggerMerge = async () => {
+    // Preserve original histories so the merged channel has full context
+    originalHistoriesRef.current = speakerHistories.map(h => [...h]);
+
+    mergeModeRef.current = true;
+    setMergeMode(true);
+    setIsSynthesizing(true);
+    participantCountRef.current = 1;
+
+    // Reconfigure all arrays to single channel
+    setSpeakerHistories([[]]);
+    setSpeakerIndices([0]);
+    setSpeakerStatuses(['Generating']);
+    setSpeakerGenerating([true]);
+    speakerHistoryRefs.current = [[]];
+    audioQueuesRef.current = [[]];
+    isProcessingRefs.current = [false];
+
+    try {
+      const formData = new FormData();
+      formData.append(
+        'histories_json',
+        JSON.stringify(originalHistoriesRef.current.map(h => h.slice(-3)))
+      );
+      formData.append('demo_token', demoToken);
+
+      const res = await axios.post(`${API_BASE}/synthesize`, formData);
+
+      if (res.data.demo_token) {
+        const remaining = res.data.demo_uses_remaining ?? 0;
+        setDemoToken(res.data.demo_token);
+        setDemoUsesLeft(remaining);
         try {
-          const t = await data.text();
-          const j = JSON.parse(t);
-          if (j.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
-        } catch {
-          /* ignore */
-        }
+          localStorage.setItem(DEMO_TOKEN_KEY, res.data.demo_token);
+          localStorage.setItem(DEMO_REMAINING_KEY, String(remaining));
+        } catch { /* ignore */ }
+        if (remaining === 0) stopVibeSession();
       }
-      console.error(detail);
-      setStatus("Export Error");
+
+      if (!res.data.error) {
+        const newItem = { ...res.data, id: Date.now() };
+        setSpeakerHistories([[newItem]]);
+        speakerHistoryRefs.current[0] = [newItem];
+        setSpeakerIndices([0]);
+      }
+    } catch (e) {
+      console.error('Synthesis error:', e);
+    } finally {
+      setIsSynthesizing(false);
+      setSpeakerGenerating([false]);
+      setSpeakerStatuses(['Done']);
       setTimeout(() => {
-        setStatus(vibeMode ? "Listening" : "Idle");
+        setSpeakerStatuses(p => p.map(s => s === 'Done' ? (vibeMode ? 'Listening' : 'Idle') : s));
       }, 2000);
     }
   };
-  
-  const currentItem = history[currentIndex];
-  const isLongCaption =
-    currentItem?.transcript && currentItem.transcript.length > 80;
-  const hasCaption = !!currentItem;
-  const _transientStatuses = new Set(["Done", "Saved!", "Zipping", "Export Error", "Backend Error"]);
-  const displayStatus = vibeMode
-    ? (status === "Hearing" || status === "Waiting" || status === "Processing" || status === "Listening")
-      ? status
-      : isGenerating ? "Generating" : status
-    : isGenerating
-      ? "Generating"
-      : _transientStatuses.has(status) ? status : "Idle";
-  const statusImageSrc = STATUS_IMAGES[displayStatus] || STATUS_IMAGES.default;
+
+  // ── Export all histories as one ZIP ───────────────────────────────────────
+  const commitSession = async () => {
+    const allHistory = mergeMode
+      ? speakerHistories[0]?.map(item => ({ ...item })) || []
+      : speakerHistories.flatMap((h, si) =>
+          h.map(item => ({ ...item, speaker_label: `Mind ${si + 1}` }))
+        );
+
+    if (allHistory.length === 0) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('history_json', JSON.stringify(
+        allHistory.map(item => ({
+          transcript: item.speaker_label ? `[${item.speaker_label}] ${item.transcript}` : item.transcript,
+          visual_prompt: item.visual_prompt,
+          image_url: item.image_url,
+          mode: item.mode,
+        }))
+      ));
+
+      const response = await axios.post(`${API_BASE}/commit-session`, formData, { responseType: 'blob' });
+      const blob = response.data;
+      const cd = response.headers['content-disposition'] || '';
+      const m = cd.match(/filename="?([^";]+)"?/i);
+      const filename = m?.[1]?.trim() || `consensus-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.zip`;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Commit error:', err);
+    }
+  };
+
+  const hasAnyHistory = speakerHistories.some(h => h.length > 0);
+  const canMerge = !mergeMode
+    && participantCount > 1
+    && speakerHistories.filter(h => h.length > 0).length >= 2;
+  const totalUsed = DEMO_LIMIT - demoUsesLeft;
 
   return (
-    <div className={`app${walkthroughStep !== null ? ` wt-step-${walkthroughStep}` : ''}`}>
-      {/* ========== WALKTHROUGH overlay (dim layer) ========== */}
-      <AnimatePresence>
-        {introPhase === 2 && walkthroughStep !== null && (
-          <motion.div
-            key="wt-overlay"
-            className="wt-overlay"
-            data-step={walkthroughStep}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-          />
-        )}
-      </AnimatePresence>
+    <div className="app">
 
-      {/* ========== WALKTHROUGH card (above everything) ========== */}
-      <AnimatePresence mode="wait">
-        {introPhase === 2 && walkthroughStep !== null && (
-          <motion.div
-            key={walkthroughStep}
-            className="wt-card"
-            style={{ ...WALKTHROUGH_STEPS[walkthroughStep].cardStyle, width: 'min(300px, 82vw)' }}
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.28, ease: 'easeOut' }}
-          >
-            <span className="wt-num">{WALKTHROUGH_STEPS[walkthroughStep].num}</span>
-            <h2 className="wt-title">{WALKTHROUGH_STEPS[walkthroughStep].title}</h2>
-            <p className="wt-body">{WALKTHROUGH_STEPS[walkthroughStep].body}</p>
-            <div className="wt-actions">
-              <button className="wt-skip" onClick={finishWalkthrough}>skip</button>
-              <button className="wt-next" onClick={advanceWalkthrough}>
-                {walkthroughStep === WALKTHROUGH_STEPS.length - 1 ? "let's go" : "next"}
-              </button>
-            </div>
-            <div className="wt-dots">
-              {WALKTHROUGH_STEPS.map((_, i) => (
-                <span key={i} className={`wt-dot${i === walkthroughStep ? ' wt-dot--active' : ''}`} />
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ========== PHASE 0: Spiral Down (full-screen white + spiral, scale 5→0, rotate 360, opacity 1→0) ========== */}
+      {/* ── Phase 0: Spiral ── */}
       <AnimatePresence mode="wait">
         {introPhase === 0 && (
-          <motion.div
-            key="phase0"
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="intro-overlay intro-overlay--white"
-          >
-            <motion.div
-              initial={{ scale: 5, opacity: 1, rotate: 0 }}
-              animate={{ scale: 0, opacity: 0, rotate: 360 }}
-              transition={{ duration: 1.5, ease: 'easeInOut' }}
-              className="intro-spiral-wrapper"
-            >
-              {/* [INSERT SPIRAL SVG HERE] - buddyname.svg spins clockwise while getting smaller; replace with Figma SVG if needed */}
-              <img
-                src="/images/buddyname.svg"
-                alt=""
-                className="intro-spiral-svg"
-              />
+          <motion.div key="p0" initial={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} className="intro-overlay intro-overlay--white">
+            <motion.div initial={{ scale: 5, opacity: 1, rotate: 0 }} animate={{ scale: 0, opacity: 0, rotate: 360 }} transition={{ duration: 1.5, ease: 'easeInOut' }} className="intro-spiral-wrapper">
+              <img src="/images/buddyname.svg" alt="" className="intro-spiral-svg" />
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ========== PHASE 1: The Explosion (mask group scales 0→5 in center); fade out when going to Phase 2 ========== */}
+      {/* ── Phase 1: Explosion ── */}
       <AnimatePresence mode="wait">
         {introPhase === 1 && (
-          <motion.div
-            key="phase1"
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="intro-overlay intro-overlay--white"
-          >
-            <motion.div
-              layoutId="buddy-logo"
-              initial={{ scale: 0 }}
-              animate={{ scale: 5 }}
-              transition={{ duration: 0.4, ease: 'easeOut' }}
-              className="intro-explosion-wrapper"
-            >
-              {/* [INSERT MASK GROUP SVG HERE] - using img for layoutId continuity with header */}
+          <motion.div key="p1" initial={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5, ease: 'easeOut' }} className="intro-overlay intro-overlay--white">
+            <motion.div layoutId="buddy-logo" initial={{ scale: 0 }} animate={{ scale: 5 }} transition={{ duration: 0.4, ease: 'easeOut' }} className="intro-explosion-wrapper">
               <img src="/images/Mask group.svg" alt="" className="intro-mask-svg" />
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ========== PHASE 2: Header (fixed) + main content ========== */}
-      {introPhase === 2 && (
+      {/* ── Participant selector ── */}
+      <AnimatePresence>
+        {introPhase === 2 && participantCount === null && (
+          <ParticipantSelector onSelect={initializeSpeakers} />
+        )}
+      </AnimatePresence>
+
+      {/* ── Main app ── */}
+      {introPhase === 2 && participantCount !== null && (
         <>
-          {/* COMMIT BUTTON - Fixed to upper left corner */}
-          {(history.length > 0 || walkthroughStep === 2) && (
-        <button
-          type="button"
-          onClick={commitSession}
-          className="commit-btn"
-          aria-label="Commit session"
-        >
-          <img
-            src="/images/commit-arrow.png"
-            alt="Commit session"
-            className="w-6 h-6 object-contain pointer-events-none select-none"
-          />
+          {hasAnyHistory && (
+            <button type="button" onClick={commitSession} className="commit-btn" aria-label="Export session">
+              <img src="/images/commit-arrow.png" alt="Export" className="w-6 h-6 object-contain pointer-events-none select-none" />
             </button>
           )}
 
-          {/* RESTART BUTTON - Fixed to upper right corner */}
-          <button
-            type="button"
-            onClick={resetSession}
-            className="restart-btn"
-            aria-label="Restart session"
-          >
+          <button type="button" onClick={resetSession} className="restart-btn" aria-label="Reset">
             <RotateCcw size={22} strokeWidth={2} />
           </button>
 
-          {/* STATUS BADGE - Fixed to viewport, outside app-inner */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={statusImageSrc}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.25 }}
-          style={{
-            position: 'fixed',
-            bottom: '4%',
-            left: '4%',
-            zIndex: 50
-          }}
-          className="flex flex-col items-center gap-3 pointer-events-none select-none status-badge-wrapper"
-        >
-          <img
-            src={statusImageSrc}
-            alt={`Status: ${displayStatus}`}
-            style={{ height: '80px', width: 'auto' }}
-            className="status-badge-label"
-          />
-          <span className="status-text"
-            style={{
-              display: 'block',
-              position: 'relative',
-              color: STATUS_COLORS[displayStatus] ?? STATUS_COLORS.default,
-              right: displayStatus === "Idle" 
-                ? "7px" 
-                : displayStatus === "Hearing"
-                  ? "2px"
-                  : displayStatus === "Listening"
-                    ? "8px"
-                    : displayStatus === "Waiting"
-                      ? "2px" 
-                      : displayStatus === "Generating"
-                        ? "12px" 
-                        : displayStatus === "Done" 
-                          ? "8px"
-                            : displayStatus === "Saved!" 
-                            ? "4px"
-                              : displayStatus === "Zipping" 
-                                ? "2px"
-                                : displayStatus === "Export Error" 
-                                  ? "7px"
-                                  : "-10px"
-                          
-            }}
-          >
-            {displayStatus}
-          </span>
-        </motion.div>
-      </AnimatePresence>
-
-          <div className="app-inner">
-            {/* HEADER - fixed at top; buddyname.svg only, click replays splash animation (centered) */}
+          <div className={`app-inner${participantCount > 2 && !mergeMode ? ' app-inner--wide' : ''}`}>
             <header className="header header--fixed">
-              <button
-                type="button"
-                onClick={() => setIntroPhase(0)}
-                className="header-logo-btn"
-                aria-label="Replay intro"
-              >
+              <button type="button" onClick={() => setIntroPhase(0)} className="header-logo-btn" aria-label="Replay intro">
                 <img src="/images/buddyname.svg" alt="Buddy" className="header-logo-img" />
               </button>
             </header>
 
-            {/* Main app content - fades in after mask group splash fades out */}
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }}
               transition={{ delay: 0.25, duration: 0.5, ease: 'easeOut' }}
               className="app-main"
             >
-
-        {/* STAGE */}
-        <div className="stage">
-          <AnimatePresence mode="wait">
-             {!currentItem ? (
-              <motion.div
-                key="empty"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="stage-empty stage-empty--blobs"
-                onMouseMove={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  blobTargetRef.current = {
-                    x: (e.clientX - rect.left) / rect.width - 0.5,
-                    y: (e.clientY - rect.top) / rect.height - 0.5,
-                  };
-                }}
-                onMouseLeave={() => { blobTargetRef.current = { x: 0, y: 0 }; }}
-              >
-                <div style={{ position: 'absolute', inset: 0, transform: `translate(${blobPos[0].x * 200}px, ${blobPos[0].y * 150}px)` }}><div className="blob blob-1" /></div>
-                <div style={{ position: 'absolute', inset: 0, transform: `translate(${blobPos[1].x * 150}px, ${blobPos[1].y * 110}px)` }}><div className="blob blob-2" /></div>
-                <div style={{ position: 'absolute', inset: 0, transform: `translate(${blobPos[2].x * 260}px, ${blobPos[2].y * 190}px)` }}><div className="blob blob-3" /></div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key={currentIndex}
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                className="stage-content"
-              >
-                {/* --- CONTENT SWITCHER --- */}
-                {currentItem.mode === "DIAGRAM" ? (
-                  <div key={`diagram-${currentItem.id}`} className="stage-diagram">
-                    <div ref={setMermaidRef} className="mermaid" />
-                  </div>
-                ) : !currentItem.image_url ? (
-                  <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-black/80">
-                      <div className="text-4xl mb-4">⚠️</div>
-                      <p className="text-red-400 font-bold mb-2">Image Generation Failed</p>
-                      <p className="text-gray-400 text-sm mt-2">Check backend logs for details</p>
-                  </div>
-                ) : currentItem.image_url?.endsWith(".mp4") ? (
-                  <video
-                    src={currentItem.image_url}
-                    className="stage-media"
-                    autoPlay loop muted playsInline
-                  />
-                ) : imgError ? (
-                  <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-black/80">
-                      <div className="text-4xl mb-4">❌</div>
-                      <p className="text-red-400 font-bold mb-2">Image Failed to Load</p>
-                  </div>
+              {/* Panels: animate between split view and merged view */}
+              <AnimatePresence mode="wait">
+                {mergeMode ? (
+                  <motion.div
+                    key="merged"
+                    className="panels-row panels-row--1"
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.5, ease: 'easeOut' }}
+                    onMouseMove={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      blobTargetRef.current = { x: (e.clientX - rect.left) / rect.width - 0.5, y: (e.clientY - rect.top) / rect.height - 0.5 };
+                    }}
+                    onMouseLeave={() => { blobTargetRef.current = { x: 0, y: 0 }; }}
+                  >
+                    <SpeakerPanel
+                      index={0}
+                      count={1}
+                      history={speakerHistories[0] || []}
+                      currentIndex={speakerIndices[0] || 0}
+                      status={speakerStatuses[0] || 'Idle'}
+                      isGenerating={speakerGenerating[0] || isSynthesizing}
+                      blobPos={blobPos}
+                      isMerged={true}
+                      onPrev={() => setSpeakerIndices(p => { const n=[...p]; n[0]=Math.max(0,n[0]-1); return n; })}
+                      onNext={() => setSpeakerIndices(p => { const n=[...p]; n[0]=Math.min((speakerHistories[0]||[]).length-1,n[0]+1); return n; })}
+                    />
+                  </motion.div>
                 ) : (
-                  <img 
-                    src={currentItem.image_url} 
-                    alt="Generated Content" 
-                    className="stage-media" 
-                    onError={() => setImgError(true)}
-                  />
+                  <motion.div
+                    key="split"
+                    className={`panels-row panels-row--${participantCount}`}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0, scale: 0.94 }}
+                    transition={{ duration: 0.4, ease: 'easeIn' }}
+                    onMouseMove={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      blobTargetRef.current = { x: (e.clientX - rect.left) / rect.width - 0.5, y: (e.clientY - rect.top) / rect.height - 0.5 };
+                    }}
+                    onMouseLeave={() => { blobTargetRef.current = { x: 0, y: 0 }; }}
+                  >
+                    {Array.from({ length: participantCount }).map((_, i) => (
+                      <SpeakerPanel
+                        key={i}
+                        index={i}
+                        count={participantCount}
+                        history={speakerHistories[i] || []}
+                        currentIndex={speakerIndices[i] || 0}
+                        status={speakerStatuses[i] || 'Idle'}
+                        isGenerating={speakerGenerating[i] || false}
+                        blobPos={blobPos}
+                        isMerged={false}
+                        onPrev={() => setSpeakerIndices(p => { const n=[...p]; n[i]=Math.max(0,n[i]-1); return n; })}
+                        onNext={() => setSpeakerIndices(p => { const n=[...p]; n[i]=Math.min((speakerHistories[i]||[]).length-1,n[i]+1); return n; })}
+                      />
+                    ))}
+                  </motion.div>
                 )}
-              </motion.div>
-            )}
-          </AnimatePresence>
+              </AnimatePresence>
 
-          {history.length > 1 && (
-            <>
-              <button type="button" onClick={prevItem} className="stage-nav stage-nav-prev">
-                <ChevronLeft />
-              </button>
-              <button type="button" onClick={nextItem} className="stage-nav stage-nav-next">
-                <ChevronRight />
-              </button>
-            </>
-          )}
-        </div>
+              {/* Unite Visions button — appears when 2+ speakers have content */}
+              <AnimatePresence>
+                {canMerge && (
+                  <motion.div
+                    key="merge-cta"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    transition={{ duration: 0.35, ease: 'easeOut' }}
+                    style={{ display: 'flex', justifyContent: 'center', marginTop: '18px' }}
+                  >
+                    <button type="button" className="merge-btn" onClick={triggerMerge}>
+                      <span className="merge-btn-icon">✦</span>
+                      Unite Visions
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-        {/* Caption below stage */}
-        {currentItem && (
-          <div className={`stage-caption ${isLongCaption ? 'stage-caption-long' : ''}`}>
-            {history.length > 0 && (
-              <span className="stage-caption-index">
-                {currentIndex + 1} of {history.length}
-              </span>
-            )}
-            <span className="stage-caption-text">"{currentItem.transcript}"</span>
-          </div>
-        )}
-
-        {/* CONTROLS */}
-        <div
-          className={`controls ${
-            hasCaption ? (isLongCaption ? 'controls-caption-long' : 'controls-caption') : ''
-          }`}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-            <LiquidButton active={vibeMode} onClick={toggleVibe} demoComplete={demoUsesLeft === 0} />
-            <div style={{ fontSize: '13px', opacity: 0.55, fontFamily: 'inherit', letterSpacing: '0.04em', textAlign: 'center', lineHeight: '1.6' }}>
-              {demoUsesLeft === 0
-                ? <span>want more or have feedback?<br /><a href={`mailto:${CONTACT_EMAIL}`} style={{ textDecoration: 'underline' }}>{CONTACT_EMAIL}</a></span>
-                : demoUsesLeft < DEMO_LIMIT
-                  ? `${demoUsesLeft} of ${DEMO_LIMIT} generations left`
-                  : null}
-            </div>
-          </div>
-        </div>
+              {/* Controls */}
+              <div className={`controls${hasAnyHistory ? ' controls-caption' : ''}`}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                  <LiquidButton active={vibeMode} onClick={toggleVibe} demoComplete={demoUsesLeft === 0} />
+                  <div style={{ fontSize: '13px', opacity: 0.55, fontFamily: 'inherit', letterSpacing: '0.04em', textAlign: 'center', lineHeight: '1.6' }}>
+                    {demoUsesLeft === 0
+                      ? <span>want more? <a href={`mailto:${CONTACT_EMAIL}`} style={{ textDecoration: 'underline' }}>{CONTACT_EMAIL}</a></span>
+                      : totalUsed > 0
+                        ? `${demoUsesLeft} of ${DEMO_LIMIT} generations left`
+                        : null}
+                  </div>
+                </div>
+              </div>
             </motion.div>
           </div>
         </>
