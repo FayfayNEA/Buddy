@@ -24,6 +24,7 @@ from openai import OpenAI
 import fal_client
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
+from reportlab.lib.utils import simpleSplit
 import asyncio
 
 load_dotenv()
@@ -684,9 +685,33 @@ async def commit_session(
 
             pdf_buffer = io.BytesIO()
             c = canvas.Canvas(pdf_buffer, pagesize=letter)
-            text_obj = c.beginText(40, 750)
+            page_width, page_height = letter
+            left_margin = 40
+            top_y = page_height - 50
+            bottom_margin = 50
+            font_name = "Helvetica"
+            font_size = 12
+            line_height = 16
+            max_text_width = page_width - left_margin * 2
+
+            text_obj = c.beginText(left_margin, top_y)
+            text_obj.setFont(font_name, font_size)
+            y = top_y
+
             for line in summary_lines:
-                text_obj.textLine(line)
+                # Wrap each line to the usable page width so words never run off the edge
+                wrapped = simpleSplit(line, font_name, font_size, max_text_width) or [""]
+                for wrapped_line in wrapped:
+                    if y <= bottom_margin:
+                        # Reached bottom of page — start a new one
+                        c.drawText(text_obj)
+                        c.showPage()
+                        text_obj = c.beginText(left_margin, top_y)
+                        text_obj.setFont(font_name, font_size)
+                        y = top_y
+                    text_obj.textLine(wrapped_line)
+                    y -= line_height
+
             c.drawText(text_obj)
             c.showPage()
             c.save()

@@ -371,8 +371,9 @@ export default function App() {
       });
       recorderRef.current.startRecording();
       
-      // Use a slightly higher threshold to filter out background noise
-      const speech = hark(stream, { interval: 100, threshold: -45 });
+      // Threshold tuned so the noise floor reads as silence: too sensitive (e.g. -45)
+      // lets ambient noise keep the "speaking" state alive so it never stops listening.
+      const speech = hark(stream, { interval: 80, threshold: -40 });
       
       speech.on('stopped_speaking', () => {
         if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
@@ -399,7 +400,7 @@ export default function App() {
                   }
               });
           }
-        }, 2000); // 2 seconds silence to trigger
+        }, 1100); // silence window before processing
       });
 
       speech.on('speaking', () => {
