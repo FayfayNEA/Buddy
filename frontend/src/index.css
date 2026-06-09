@@ -739,6 +739,10 @@ body {
   transform: translateY(-1px);
 }
 
+.liquid-btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
 .liquid-btn--active {
   background-color: rgba(220, 30, 30, 0.75);
 }
@@ -758,11 +762,17 @@ body {
   50% { opacity: 0.6; }
 }
 
-/* Status badge text under the SVG in the bottom-left corner */
-.status-badge-label {
-
+/* Status badge: real flex column (Tailwind utilities are not active in this project) */
+.status-badge-wrapper {
   display: flex;
-  gap: 12px;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Status icon SVG in the bottom-left corner */
+.status-badge-label {
+  display: block;
 }
 
 .status-text {
@@ -860,7 +870,7 @@ body {
 .wt-skip:hover { color: #6b6b8a; }
 
 .wt-next {
-  background: #7c5cfc;
+  background-color: var(--purple-light);
   color: #ffffff;
   border: none;
   border-radius: 100px;
@@ -869,12 +879,16 @@ body {
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.2s ease, transform 0.15s ease;
+  transition: background-color 0.2s ease, transform 0.15s ease;
 }
 
 .wt-next:hover {
-  background: #6a4aef;
+  background-color: rgba(120, 90, 220, 0.55);
   transform: translateY(-1px);
+}
+
+.wt-next:active {
+  transform: translateY(0) scale(0.97);
 }
 
 .wt-dots {
@@ -959,9 +973,15 @@ body {
   font-weight: 600;
   cursor: pointer;
   color: #fff;
-  background: var(--accent);
+  background-color: var(--purple-light);
+  transition: background-color 0.2s ease, transform 0.15s ease;
 }
 
 .access-notice-btn:hover {
-  background: var(--accent-hover);
+  background-color: rgba(120, 90, 220, 0.55);
+  transform: translateY(-1px);
+}
+
+.access-notice-btn:active {
+  transform: translateY(0) scale(0.97);
 }

@@ -724,46 +724,35 @@ export default function App() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.25 }}
+          drag
+          dragSnapToOrigin
+          dragElastic={0.55}
+          dragTransition={{ bounceStiffness: 320, bounceDamping: 18 }}
+          whileHover={{ scale: 1.04 }}
+          whileDrag={{ scale: 1.08, cursor: 'grabbing' }}
+          transition={{ type: 'spring', stiffness: 400, damping: 20 }}
           style={{
             position: 'fixed',
             bottom: '4%',
             left: '4%',
-            zIndex: 50
+            zIndex: 50,
+            width: '160px',
+            cursor: 'grab'
           }}
-          className="flex flex-col items-center gap-3 pointer-events-none select-none status-badge-wrapper"
+          className="flex flex-col items-center gap-3 select-none status-badge-wrapper"
         >
           <img
             src={statusImageSrc}
             alt={`Status: ${displayStatus}`}
-            style={{ height: '80px', width: 'auto' }}
+            style={{ height: '80px', width: '110px', objectFit: 'contain' }}
             className="status-badge-label"
           />
           <span className="status-text"
             style={{
               display: 'block',
-              position: 'relative',
+              width: '100%',
+              textAlign: 'center',
               color: STATUS_COLORS[displayStatus] ?? STATUS_COLORS.default,
-              right: displayStatus === "Idle" 
-                ? "7px" 
-                : displayStatus === "Hearing"
-                  ? "2px"
-                  : displayStatus === "Listening"
-                    ? "8px"
-                    : displayStatus === "Waiting"
-                      ? "2px" 
-                      : displayStatus === "Generating"
-                        ? "12px" 
-                        : displayStatus === "Done" 
-                          ? "8px"
-                            : displayStatus === "Saved!" 
-                            ? "4px"
-                              : displayStatus === "Zipping" 
-                                ? "2px"
-                                : displayStatus === "Export Error" 
-                                  ? "7px"
-                                  : "-10px"
-                          
             }}
           >
             {displayStatus}
