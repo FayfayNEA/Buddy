@@ -56,27 +56,47 @@ _TRACE_MAX = 200
 _request_trace: deque = deque(maxlen=_TRACE_MAX)
 _trace_lock = Lock()
 
-# Demo token system — each visitor gets DEMO_LIMIT generations, tracked by UUID
+# Demo limit system — each visitor gets DEMO_LIMIT generations. Usage is tracked by
+# BOTH a browser UUID token and the client IP. The effective count is the larger of
+# the two, so a visitor must change their browser storage AND their IP to reset the
+# limit (clearing localStorage alone no longer grants a fresh allowance).
 _DEMO_LIMIT = int(os.getenv("DEMO_LIMIT", "3"))
-_demo_tokens: dict = {}  # token -> use_count
+_demo_tokens: dict = {}     # token -> use_count
+_demo_ip_usage: dict = {}   # client_ip -> use_count
 _demo_token_lock = Lock()
 
 
-def _resolve_demo_token(token: str) -> tuple:
-    """Return (token, uses_so_far). Creates a new token if unknown."""
+def _client_ip(request: Request) -> str:
+    """Best-effort real client IP. Cloud Run and other proxies forward it in
+    X-Forwarded-For (first entry is the original client)."""
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _resolve_demo_token(token: str) -> str:
+    """Return a valid token, creating a new one if unknown."""
     with _demo_token_lock:
         if token and token in _demo_tokens:
-            return token, _demo_tokens[token]
+            return token
         new_token = str(uuid.uuid4())
         _demo_tokens[new_token] = 0
-        return new_token, 0
+        return new_token
 
 
-def _increment_demo_token(token: str) -> int:
-    """Increment use count and return the new total."""
+def _demo_uses(token: str, ip: str) -> int:
+    """Effective uses = the larger of the token-based and IP-based counts."""
+    with _demo_token_lock:
+        return max(_demo_tokens.get(token, 0), _demo_ip_usage.get(ip, 0))
+
+
+def _increment_demo(token: str, ip: str) -> int:
+    """Increment both counters and return the new effective use count."""
     with _demo_token_lock:
         _demo_tokens[token] = _demo_tokens.get(token, 0) + 1
-        return _demo_tokens[token]
+        _demo_ip_usage[ip] = _demo_ip_usage.get(ip, 0) + 1
+        return max(_demo_tokens[token], _demo_ip_usage[ip])
 
 
 def _push_trace(entry: dict) -> None:
@@ -205,8 +225,9 @@ async def upload_audio(
     logger.info("========== /upload-audio [%s] START ==========", request_id)
 
     # --- DEMO GATE ---
-    resolved_token, uses_so_far = _resolve_demo_token(demo_token)
-    if uses_so_far >= _DEMO_LIMIT:
+    client_ip = _client_ip(request)
+    resolved_token = _resolve_demo_token(demo_token)
+    if _demo_uses(resolved_token, client_ip) >= _DEMO_LIMIT:
         raise HTTPException(status_code=429, detail="Demo limit reached")
 
     # --- A. SETUP ---
@@ -552,7 +573,7 @@ async def upload_audio(
             diagram_code.splitlines()[0][:200] if diagram_code else "",
         )
 
-    uses_now = _increment_demo_token(resolved_token)
+    uses_now = _increment_demo(resolved_token, client_ip)
 
     result = {
         "transcript": user_text,
