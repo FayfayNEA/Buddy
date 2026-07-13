@@ -4,6 +4,8 @@ import RecordRTC from 'recordrtc';
 import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import mermaid from 'mermaid';
+import MockupRenderer from './mockup/MockupRenderer';
+import FlipCard from './mockup/FlipCard';
 
 mermaid.initialize({
   startOnLoad: true,
@@ -23,20 +25,20 @@ const DEMO_LIMIT = 3;
 
 const SPEAKER_COLORS = ['#7c5cfc', '#0891b2', '#d97706', '#16a34a', '#dc2626', '#9333ea'];
 
-// Find the dominant vocal frequency (80–320 Hz) in FFT data.
+// Find the dominant vocal frequency (85–400 Hz) in FFT data.
 function detectDominantPitch(analyser, sampleRate) {
   const bufferLength = analyser.frequencyBinCount;
   const dataArray = new Float32Array(bufferLength);
   analyser.getFloatFrequencyData(dataArray);
   const binSize = sampleRate / (2 * bufferLength);
-  const minBin = Math.max(1, Math.floor(80 / binSize));
-  const maxBin = Math.min(bufferLength - 1, Math.floor(320 / binSize));
+  const minBin = Math.max(1, Math.floor(85 / binSize));
+  const maxBin = Math.min(bufferLength - 1, Math.floor(400 / binSize));
   let maxVal = -Infinity;
   let maxBinIdx = minBin;
   for (let i = minBin; i <= maxBin; i++) {
     if (dataArray[i] > maxVal) { maxVal = dataArray[i]; maxBinIdx = i; }
   }
-  if (maxVal < -55) return null;
+  if (maxVal < -65) return null;
   return maxBinIdx * binSize;
 }
 
@@ -45,7 +47,7 @@ function assignSpeaker(pitchSamples, count) {
   if (count <= 1 || pitchSamples.length === 0) return 0;
   const sorted = [...pitchSamples].sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)];
-  const MIN = 80, MAX = 320;
+  const MIN = 85, MAX = 400;
   const clamped = Math.max(MIN, Math.min(MAX - 1, median));
   const bucket = Math.floor((clamped - MIN) / (MAX - MIN) * count);
   return Math.min(bucket, count - 1);
@@ -102,7 +104,7 @@ function ParticipantSelector({ onSelect }) {
 }
 
 // ─── Single speaker panel ─────────────────────────────────────────────────────
-function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, status, isGenerating, blobPos, isMerged }) {
+function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, status, isGenerating, blobPos, isMerged, vibeMode, isActiveSpeaker, onClaim }) {
   const mermaidNodeRef = useRef(null);
   const [imgError, setImgError] = useState(false);
   const currentItem = history[currentIndex];
@@ -135,13 +137,22 @@ function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, sta
   return (
     <div className="speaker-panel">
       {showLabel && (
-        <div className={`speaker-label${isMerged ? ' speaker-label--merged' : ''}`}>
+        <div className={`speaker-label${isMerged ? ' speaker-label--merged' : ''}${isActiveSpeaker ? ' speaker-label--claimed' : ''}`}>
           {!isMerged && <span className="speaker-label-dot" style={{ background: color }} />}
           {isMerged
             ? <span className="speaker-label-text speaker-label-text--merged">Shared Vision</span>
             : <span className="speaker-label-text">Mind {index + 1}</span>
           }
           {isActive && <span className="speaker-active-dot" style={isMerged ? {} : { background: color }} />}
+          {vibeMode && !isMerged && (
+            <button
+              className={`speaker-claim-btn${isActiveSpeaker ? ' speaker-claim-btn--active' : ''}`}
+              onClick={onClaim}
+              title={isActiveSpeaker ? 'Release panel' : 'Tap to claim this panel'}
+            >
+              {isActiveSpeaker ? '● me' : '🎤'}
+            </button>
+          )}
         </div>
       )}
 
@@ -263,6 +274,24 @@ export default function App() {
   const sliceTimerRef = useRef(null);
   const pitchSampleIntervalRef = useRef(null);
   const hearingResetRef = useRef(null);
+
+  // Manual speaker claim — null = auto-detect, 0..N-1 = claimed by that panel
+  const [activeSpeaker, setActiveSpeaker] = useState(null);
+  const activeSpeakerRef = useRef(null);
+  useEffect(() => { activeSpeakerRef.current = activeSpeaker; }, [activeSpeaker]);
+
+  // App mode: 'image' = existing image generation, 'mockup' = voice-to-UI-spec
+  const [appMode, setAppMode] = useState('image');
+  const appModeRef = useRef('image');
+  useEffect(() => { appModeRef.current = appMode; }, [appMode]);
+
+  // Mockup mode state
+  const [mockupIterations, setMockupIterations] = useState([]);
+  const [mockupCurrentIdx, setMockupCurrentIdx] = useState(0);
+  const [mockupIsGenerating, setMockupIsGenerating] = useState(false);
+  const [mockupError, setMockupError] = useState(null);
+  const mockupPreviousSpecRef = useRef(null);
+  const sendMockupAudioRef = useRef(null);
 
   // Blob water animation
   const blobTargetRef = useRef({ x: 0, y: 0 });
@@ -421,6 +450,57 @@ export default function App() {
     }
   };
 
+  // ── Mockup audio: send 2.5s chunks to /mockup ─────────────────────────────
+  const sendMockupAudio = async (blob) => {
+    setMockupIsGenerating(true);
+    setMockupError(null);
+    const formData = new FormData();
+    formData.append('file', blob, 'voice.wav');
+    formData.append('previous_spec_json', JSON.stringify(mockupPreviousSpecRef.current));
+    formData.append('demo_token', demoToken);
+    try {
+      const res = await axios.post(`${API_BASE}/mockup`, formData);
+      if (res.data.noOp) return;
+      if (res.data.error) { setMockupError('oops'); return; }
+      const spec = res.data.spec;
+      mockupPreviousSpecRef.current = spec;
+      const iterNum = spec.iterationNumber || (mockupIterations.length + 1);
+      const newIteration = {
+        iterationNumber: iterNum, spec,
+        transcript: res.data.transcript || '',
+        changeLog: spec.changeLog || [],
+      };
+      setMockupIterations(prev => {
+        const next = [...prev, newIteration];
+        setMockupCurrentIdx(next.length - 1);
+        return next;
+      });
+      if (res.data.demo_token) {
+        const remaining = res.data.demo_uses_remaining ?? 0;
+        setDemoToken(res.data.demo_token);
+        setDemoUsesLeft(remaining);
+        try {
+          localStorage.setItem(DEMO_TOKEN_KEY, res.data.demo_token);
+          localStorage.setItem(DEMO_REMAINING_KEY, String(remaining));
+        } catch { /* ignore */ }
+        if (remaining === 0) stopVibeSession();
+      }
+    } catch (err) {
+      if (err?.response?.status === 429) {
+        setDemoUsesLeft(0);
+        try { localStorage.setItem(DEMO_REMAINING_KEY, '0'); } catch { /* ignore */ }
+        stopVibeSession();
+      } else {
+        setMockupError('oops');
+      }
+    } finally {
+      setMockupIsGenerating(false);
+    }
+  };
+
+  // Keep ref current so slice timer can call latest closure
+  useEffect(() => { sendMockupAudioRef.current = sendMockupAudio; });
+
   // ── Recording: 5-second rolling slices ────────────────────────────────────
   const startVibeSession = async () => {
     try {
@@ -433,8 +513,8 @@ export default function App() {
       audioCtxRef.current = audioCtx;
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 2048;
-      analyser.smoothingTimeConstant = 0.8;
+      analyser.fftSize = 4096;
+      analyser.smoothingTimeConstant = 0.5;
       source.connect(analyser);
       analyserRef.current = analyser;
 
@@ -460,27 +540,39 @@ export default function App() {
         }, 400);
       }, 150);
 
+      const chunkMs = appModeRef.current === 'mockup' ? 2500 : 5000;
       sliceTimerRef.current = setInterval(() => {
         if (!recorderRef.current || !streamRef.current?.active) return;
         recorderRef.current.stopRecording(() => {
           const blob = recorderRef.current.getBlob();
-          const samples = pitchSamplesRef.current.splice(0);
-          const count = participantCountRef.current;
-          // In merge mode, all audio goes to the single unified channel
-          const speakerIdx = mergeModeRef.current ? 0 : assignSpeaker(samples, count);
 
-          if (blob.size > 5000) {
-            if (!audioQueuesRef.current[speakerIdx]) audioQueuesRef.current[speakerIdx] = [];
-            audioQueuesRef.current[speakerIdx].push(blob);
-            processQueue(speakerIdx);
+          if (appModeRef.current === 'mockup') {
+            // All audio → single mockup stream, no speaker assignment
+            if (blob.size > 5000 && sendMockupAudioRef.current) {
+              sendMockupAudioRef.current(blob);
+            }
+          } else {
+            const samples = pitchSamplesRef.current.splice(0);
+            const count = participantCountRef.current;
+            // In merge mode, all audio goes to the single unified channel
+            const speakerIdx = mergeModeRef.current ? 0
+              : (activeSpeakerRef.current !== null ? activeSpeakerRef.current
+              : assignSpeaker(samples, count));
+
+            if (blob.size > 5000) {
+              if (!audioQueuesRef.current[speakerIdx]) audioQueuesRef.current[speakerIdx] = [];
+              audioQueuesRef.current[speakerIdx].push(blob);
+              processQueue(speakerIdx);
+            }
           }
 
+          pitchSamplesRef.current.splice(0);
           if (streamRef.current?.active) {
             recorderRef.current.reset();
             recorderRef.current.startRecording();
           }
         });
-      }, 5000);
+      }, chunkMs);
 
       setSpeakerStatuses(new Array(participantCountRef.current).fill('Listening'));
 
@@ -502,6 +594,7 @@ export default function App() {
     isProcessingRefs.current = isProcessingRefs.current.map(() => false);
     setSpeakerGenerating(p => p.map(() => false));
     setSpeakerStatuses(p => p.map(() => 'Idle'));
+    setActiveSpeaker(null);
   };
 
   const toggleVibe = () => {
@@ -523,6 +616,12 @@ export default function App() {
     speakerHistoryRefs.current = Array.from({ length: count }, () => []);
     audioQueuesRef.current = Array.from({ length: count }, () => []);
     isProcessingRefs.current = new Array(count).fill(false);
+    // Reset mockup state
+    setMockupIterations([]);
+    setMockupCurrentIdx(0);
+    setMockupIsGenerating(false);
+    setMockupError(null);
+    mockupPreviousSpecRef.current = null;
   };
 
   // ── Merge all speakers into one unified channel ────────────────────────────
@@ -620,7 +719,9 @@ export default function App() {
     }
   };
 
-  const hasAnyHistory = speakerHistories.some(h => h.length > 0);
+  const hasAnyHistory = appMode === 'mockup'
+    ? mockupIterations.length > 0
+    : speakerHistories.some(h => h.length > 0);
   const canMerge = !mergeMode
     && participantCount > 1
     && speakerHistories.filter(h => h.length > 0).length >= 2;
@@ -683,85 +784,179 @@ export default function App() {
               transition={{ delay: 0.25, duration: 0.5, ease: 'easeOut' }}
               className="app-main"
             >
-              {/* Panels: animate between split view and merged view */}
-              <AnimatePresence mode="wait">
-                {mergeMode ? (
-                  <motion.div
-                    key="merged"
-                    className="panels-row panels-row--1"
-                    initial={{ opacity: 0, scale: 0.96 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.5, ease: 'easeOut' }}
-                    onMouseMove={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      blobTargetRef.current = { x: (e.clientX - rect.left) / rect.width - 0.5, y: (e.clientY - rect.top) / rect.height - 0.5 };
-                    }}
-                    onMouseLeave={() => { blobTargetRef.current = { x: 0, y: 0 }; }}
+              {/* Mode toggle */}
+              {!vibeMode && (
+                <div className="mode-toggle-row">
+                  <button
+                    className={`mode-toggle-pill${appMode === 'image' ? ' mode-toggle-pill--active' : ''}`}
+                    onClick={() => setAppMode('image')}
                   >
-                    <SpeakerPanel
-                      index={0}
-                      count={1}
-                      history={speakerHistories[0] || []}
-                      currentIndex={speakerIndices[0] || 0}
-                      status={speakerStatuses[0] || 'Idle'}
-                      isGenerating={speakerGenerating[0] || isSynthesizing}
-                      blobPos={blobPos}
-                      isMerged={true}
-                      onPrev={() => setSpeakerIndices(p => { const n=[...p]; n[0]=Math.max(0,n[0]-1); return n; })}
-                      onNext={() => setSpeakerIndices(p => { const n=[...p]; n[0]=Math.min((speakerHistories[0]||[]).length-1,n[0]+1); return n; })}
-                    />
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="split"
-                    className={`panels-row panels-row--${participantCount}`}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0, scale: 0.94 }}
-                    transition={{ duration: 0.4, ease: 'easeIn' }}
-                    onMouseMove={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      blobTargetRef.current = { x: (e.clientX - rect.left) / rect.width - 0.5, y: (e.clientY - rect.top) / rect.height - 0.5 };
-                    }}
-                    onMouseLeave={() => { blobTargetRef.current = { x: 0, y: 0 }; }}
+                    Image
+                  </button>
+                  <button
+                    className={`mode-toggle-pill${appMode === 'mockup' ? ' mode-toggle-pill--active' : ''}`}
+                    onClick={() => setAppMode('mockup')}
                   >
-                    {Array.from({ length: participantCount }).map((_, i) => (
-                      <SpeakerPanel
-                        key={i}
-                        index={i}
-                        count={participantCount}
-                        history={speakerHistories[i] || []}
-                        currentIndex={speakerIndices[i] || 0}
-                        status={speakerStatuses[i] || 'Idle'}
-                        isGenerating={speakerGenerating[i] || false}
-                        blobPos={blobPos}
-                        isMerged={false}
-                        onPrev={() => setSpeakerIndices(p => { const n=[...p]; n[i]=Math.max(0,n[i]-1); return n; })}
-                        onNext={() => setSpeakerIndices(p => { const n=[...p]; n[i]=Math.min((speakerHistories[i]||[]).length-1,n[i]+1); return n; })}
-                      />
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    Mockup
+                  </button>
+                </div>
+              )}
 
-              {/* Unite Visions button — appears when 2+ speakers have content */}
-              <AnimatePresence>
-                {canMerge && (
-                  <motion.div
-                    key="merge-cta"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 6 }}
-                    transition={{ duration: 0.35, ease: 'easeOut' }}
-                    style={{ display: 'flex', justifyContent: 'center', marginTop: '18px' }}
-                  >
-                    <button type="button" className="merge-btn" onClick={triggerMerge}>
-                      <span className="merge-btn-icon">✦</span>
-                      Unite Visions
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {/* ── Image mode panels ── */}
+              {appMode === 'image' && (
+                <>
+                  <AnimatePresence mode="wait">
+                    {mergeMode ? (
+                      <motion.div
+                        key="merged"
+                        className="panels-row panels-row--1"
+                        initial={{ opacity: 0, scale: 0.96 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.5, ease: 'easeOut' }}
+                        onMouseMove={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          blobTargetRef.current = { x: (e.clientX - rect.left) / rect.width - 0.5, y: (e.clientY - rect.top) / rect.height - 0.5 };
+                        }}
+                        onMouseLeave={() => { blobTargetRef.current = { x: 0, y: 0 }; }}
+                      >
+                        <SpeakerPanel
+                          index={0}
+                          count={1}
+                          history={speakerHistories[0] || []}
+                          currentIndex={speakerIndices[0] || 0}
+                          status={speakerStatuses[0] || 'Idle'}
+                          isGenerating={speakerGenerating[0] || isSynthesizing}
+                          blobPos={blobPos}
+                          isMerged={true}
+                          onPrev={() => setSpeakerIndices(p => { const n=[...p]; n[0]=Math.max(0,n[0]-1); return n; })}
+                          onNext={() => setSpeakerIndices(p => { const n=[...p]; n[0]=Math.min((speakerHistories[0]||[]).length-1,n[0]+1); return n; })}
+                        />
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="split"
+                        className={`panels-row panels-row--${participantCount}`}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0, scale: 0.94 }}
+                        transition={{ duration: 0.4, ease: 'easeIn' }}
+                        onMouseMove={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          blobTargetRef.current = { x: (e.clientX - rect.left) / rect.width - 0.5, y: (e.clientY - rect.top) / rect.height - 0.5 };
+                        }}
+                        onMouseLeave={() => { blobTargetRef.current = { x: 0, y: 0 }; }}
+                      >
+                        {Array.from({ length: participantCount }).map((_, i) => (
+                          <SpeakerPanel
+                            key={i}
+                            index={i}
+                            count={participantCount}
+                            history={speakerHistories[i] || []}
+                            currentIndex={speakerIndices[i] || 0}
+                            status={speakerStatuses[i] || 'Idle'}
+                            isGenerating={speakerGenerating[i] || false}
+                            blobPos={blobPos}
+                            isMerged={false}
+                            vibeMode={vibeMode}
+                            isActiveSpeaker={activeSpeaker === i}
+                            onClaim={() => setActiveSpeaker(prev => prev === i ? null : i)}
+                            onPrev={() => setSpeakerIndices(p => { const n=[...p]; n[i]=Math.max(0,n[i]-1); return n; })}
+                            onNext={() => setSpeakerIndices(p => { const n=[...p]; n[i]=Math.min((speakerHistories[i]||[]).length-1,n[i]+1); return n; })}
+                          />
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Unite Visions button */}
+                  <AnimatePresence>
+                    {canMerge && (
+                      <motion.div
+                        key="merge-cta"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 6 }}
+                        transition={{ duration: 0.35, ease: 'easeOut' }}
+                        style={{ display: 'flex', justifyContent: 'center', marginTop: '18px' }}
+                      >
+                        <button type="button" className="merge-btn" onClick={triggerMerge}>
+                          <span className="merge-btn-icon">✦</span>
+                          Unite Visions
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </>
+              )}
+
+              {/* ── Mockup mode panel ── */}
+              {appMode === 'mockup' && (
+                <div className="mockup-mode-wrap">
+                  <div className="mockup-deck">
+                    {/* Empty state */}
+                    {mockupIterations.length === 0 && !mockupIsGenerating && !mockupError && (
+                      <div className="mockup-frame mockup-empty-state">
+                        <div className="mockup-empty-icon">◻</div>
+                        <p>start talking to build your UI</p>
+                      </div>
+                    )}
+
+                    {/* Generating first spec */}
+                    {mockupIterations.length === 0 && mockupIsGenerating && (
+                      <div className="mockup-frame mockup-generating-state">
+                        <div className="mockup-spinner" />
+                        <p>listening...</p>
+                      </div>
+                    )}
+
+                    {/* Error state */}
+                    {mockupError === 'oops' && mockupIterations.length === 0 && (
+                      <div className="mockup-frame mockup-oops-state">
+                        <p>oops, i messed up — let's try again</p>
+                      </div>
+                    )}
+
+                    {/* Flip card deck */}
+                    {mockupIterations.length > 0 && (
+                      <>
+                        <FlipCard
+                          front={<MockupRenderer spec={mockupIterations[mockupCurrentIdx].spec} />}
+                          transcript={mockupIterations[mockupCurrentIdx].transcript}
+                          changeLog={mockupIterations[mockupCurrentIdx].changeLog}
+                          iterationNumber={mockupIterations[mockupCurrentIdx].iterationNumber}
+                        />
+
+                        {mockupIterations.length > 1 && (
+                          <div className="mockup-deck-nav">
+                            <button
+                              className="mockup-nav-btn"
+                              onClick={() => setMockupCurrentIdx(i => Math.max(0, i - 1))}
+                              disabled={mockupCurrentIdx === 0}
+                            >
+                              ‹
+                            </button>
+                            <span className="mockup-nav-label">
+                              {mockupCurrentIdx + 1} / {mockupIterations.length}
+                            </span>
+                            <button
+                              className="mockup-nav-btn"
+                              onClick={() => setMockupCurrentIdx(i => Math.min(mockupIterations.length - 1, i + 1))}
+                              disabled={mockupCurrentIdx === mockupIterations.length - 1}
+                            >
+                              ›
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Generating indicator when more iterations exist */}
+                        {mockupIsGenerating && (
+                          <div className="mockup-live-dot" title="Processing next chunk..." />
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Controls */}
               <div className={`controls${hasAnyHistory ? ' controls-caption' : ''}`}>

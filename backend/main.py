@@ -723,6 +723,228 @@ Return JSON ONLY: { "prompt": "..." }
     }
 
 
+
+# ─── Mockup mode: live-patch UI spec generation ──────────────────────────────
+
+_MOCKUP_VALID_TYPES = {
+    "NavBar", "TabBar", "Sheet", "Card", "Section", "List", "ListRow",
+    "Button", "TextField", "SearchBar", "Toggle", "Slider",
+    "SegmentedControl", "Stepper", "Badge", "ProgressIndicator",
+    "Alert", "Toast", "Avatar", "Image", "Icon",
+}
+
+_MOCKUP_SYSTEM_PROMPT = """You maintain a single evolving UI spec as JSON, updated every ~2.5 seconds from live group conversation. Multiple speakers may be talking about the same thing, refining each other's ideas out loud, disagreeing, joking, or just brainstorming vaguely. Your job is to turn that messy talk into a coherent, incrementally-evolving spec — never a literal transcript, never a guess dressed up as a decision.
+
+You will receive:
+1. The previous spec (or null if this is iteration 1)
+2. The new transcript chunk (~2.5s of raw speech, possibly mid-sentence, possibly multiple overlapping speakers, possibly a fragment with no clear subject)
+
+CORE RULES:
+
+1. FIXED VOCABULARY ONLY. Only use component types from: [NavBar, TabBar, Sheet, Card, Section, List, ListRow, Button, TextField, SearchBar, Toggle, Slider, SegmentedControl, Stepper, Badge, ProgressIndicator, Alert, Toast, Avatar, Image, Icon]. Never invent a new type.
+
+2. FIXED TOKENS ONLY. Never generate new hex values, spacing, or radii. Use systemBlue (#007AFF), systemGray6 (#F2F2F7), systemGray5 (#E5E5EA), systemGray (#8E8E93), label (#000000), background (#FFFFFF). Spacing: 4/8/12/16/24/32/48/64. Radius: 10/14/20.
+
+3. REFINEMENT OVER ADDITION. Rapid back-and-forth about the same idea modifies existing components, not duplicates them.
+
+4. WAIT FOR PRECISION. Vague/filler/undecided chatter → no-op. Never invent detail nobody stated.
+
+5. MINIMUM VIABLE INTERPRETATION. Underspecified-but-resolvable descriptions get the smallest safe default.
+
+6. NEVER REMOVE unless removal is explicit and unambiguous.
+
+FRINGE CASES:
+a. CONTRADICTION/DISAGREEMENT: If speakers disagree in the same chunk, no-op — wait for resolution.
+b. OFF-TOPIC/SMALL TALK: Not about the product → no-op.
+c. META-COMMENTARY about the tool itself → no-op.
+d. RETRACTION/UNDO: Clear reversal → remove/revert the specific component.
+e. REFERENTIAL AMBIGUITY: "make that bigger" without clear referent → no-op.
+f. OVERLAPPING GARBLED SPEECH: Can't parse coherent intent → no-op.
+g. SCOPE CREEP/NEW SCREEN: Default to current screen unless explicitly stated ("let's make a settings page"). When creating a new screen: add NavBar with screen name as title, one purpose-matching Button, and back-nav in NavBar leading pointing to origin screen.
+h. HYPOTHETICALS BEING WEIGHED: "what if it was a toggle" (not decided) → no-op.
+i. VAGUE QUANTITIES: "a few buttons" → no-op until specific.
+j. REPEATED IDENTICAL REQUESTS: Already in spec → no-op.
+
+OUTPUT BEHAVIOR:
+- If ANY confident, resolvable change: output the full updated spec JSON with changeType "added"/"modified"/"removed" on affected components and a changeLog array.
+- If NO confident change: output exactly {"noOp": true} and nothing else.
+- Output ONLY valid JSON. No prose outside changeLog fields.
+
+JSON spec schema:
+{
+  "iterationNumber": 4,
+  "previousIterationRef": 3,
+  "transcriptChunk": "...",
+  "screens": [
+    {
+      "id": "screen_home",
+      "name": "Home",
+      "components": [
+        {
+          "id": "comp_001",
+          "type": "NavBar",
+          "props": {"title": "Home", "leading": null, "trailing": null}
+        },
+        {
+          "id": "comp_002",
+          "type": "Button",
+          "props": {"label": "Get Started", "variant": "primary"},
+          "changeType": "added"
+        }
+      ]
+    }
+  ],
+  "changeLog": ["added Button 'Get Started' to Home screen"]
+}"""
+
+
+def _validate_mockup_spec(spec: dict) -> bool:
+    if not isinstance(spec, dict):
+        return False
+    if spec.get("noOp") is True:
+        return True
+    if not isinstance(spec.get("screens"), list):
+        return False
+    for screen in spec["screens"]:
+        for comp in screen.get("components", []):
+            if comp.get("type") not in _MOCKUP_VALID_TYPES:
+                return False
+    return True
+
+
+def _call_live_patch(previous_spec_json: str, transcript: str) -> dict:
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": _MOCKUP_SYSTEM_PROMPT},
+            {"role": "user", "content": f"Previous spec:\n{previous_spec_json}\n\nTranscript chunk:\n{transcript}"},
+        ],
+        max_tokens=2000,
+        temperature=0.3,
+    )
+    return json.loads(response.choices[0].message.content)
+
+
+@app.post("/mockup")
+@limiter.limit("60/minute")
+async def mockup_endpoint(
+    request: Request,
+    file: UploadFile = File(...),
+    previous_spec_json: str = Form(default="null"),
+    demo_token: str = Form(default=""),
+):
+    """Live-patch the evolving UI spec from a 2.5s audio chunk."""
+    request_id = str(uuid.uuid4())[:10]
+    logger.info("========== /mockup [%s] START ==========", request_id)
+
+    resolved_token, uses_so_far = _resolve_demo_token(demo_token)
+    if uses_so_far >= _DEMO_LIMIT:
+        raise HTTPException(status_code=429, detail="Demo limit reached")
+
+    audio_bytes = await file.read()
+
+    # Transcribe
+    try:
+        transcript_resp = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=("voice.wav", audio_bytes, "audio/wav"),
+        )
+        transcript = (transcript_resp.text or "").strip()
+        logger.info("[%s] Transcript: %s", request_id, transcript[:200])
+    except Exception as e:
+        logger.error("[%s] Whisper error: %s", request_id, e)
+        return {"noOp": True, "transcript": "", "error": "transcription_failed"}
+
+    if not transcript:
+        return {"noOp": True, "transcript": ""}
+
+    # Live-patch with one retry
+    spec = None
+    for attempt in range(2):
+        try:
+            result = await asyncio.to_thread(_call_live_patch, previous_spec_json, transcript)
+            if _validate_mockup_spec(result):
+                spec = result
+                break
+            logger.warning("[%s] Schema validation failed on attempt %d", request_id, attempt + 1)
+        except Exception as e:
+            logger.warning("[%s] Live-patch attempt %d failed: %s", request_id, attempt + 1, e)
+
+    if spec is None:
+        logger.error("[%s] Both live-patch attempts failed", request_id)
+        return {"error": "generation_failed", "transcript": transcript}
+
+    if spec.get("noOp"):
+        logger.info("[%s] noOp — no spec change", request_id)
+        return {"noOp": True, "transcript": transcript}
+
+    # Only increment demo counter on real changes
+    uses_now = _increment_demo_token(resolved_token)
+    remaining = max(0, _DEMO_LIMIT - uses_now)
+
+    logger.info("========== /mockup [%s] END (iteration %s) ==========", request_id, spec.get("iterationNumber"))
+    return {
+        "spec": spec,
+        "noOp": False,
+        "transcript": transcript,
+        "demo_token": resolved_token,
+        "demo_uses_remaining": remaining,
+    }
+
+
+@app.post("/mockup-export")
+@limiter.limit("30/hour")
+async def mockup_export(
+    request: Request,
+    spec_json: str = Form(...),
+    transcript: str = Form(default=""),
+    iteration_number: int = Form(default=1),
+):
+    """Bundle a single mockup iteration into a standalone zip."""
+    try:
+        spec = json.loads(spec_json)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid spec JSON")
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("spec.json", json.dumps(spec, indent=2, ensure_ascii=False))
+        zf.writestr("transcript.txt", transcript)
+
+        # Minimal standalone HTML that wraps the spec in a static viewer
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Iteration {iteration_number}</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="frame">
+  <pre id="spec-debug">{json.dumps(spec, indent=2, ensure_ascii=False)}</pre>
+</div>
+<script src="script.js"></script>
+</body>
+</html>"""
+        zf.writestr("index.html", html)
+
+        css = """body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#1c1c1e;font-family:-apple-system,"SF Pro Text",system-ui,sans-serif}
+.frame{width:375px;height:667px;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.5);padding:16px;box-sizing:border-box;overflow-y:auto}
+pre{font-size:11px;white-space:pre-wrap;word-break:break-all;color:#1c1c1e}"""
+        zf.writestr("styles.css", css)
+        zf.writestr("script.js", "// Buddy mockup export — iteration " + str(iteration_number))
+
+    zip_buffer.seek(0)
+    filename = f"iteration-{iteration_number:02d}.zip"
+    return Response(
+        content=zip_buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.post("/commit-session")
 @limiter.limit("5/hour")
 async def commit_session(
