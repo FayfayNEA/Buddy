@@ -1,6 +1,8 @@
-# React + Vite
+# Buddy — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite frontend for Buddy: a voice-driven canvas that turns live speech into images, diagrams, videos, and interactive UI mockups.
+
+This is built on the standard Vite + React template (minimal setup for React with HMR and ESLint).
 
 Currently, two official plugins are available:
 
