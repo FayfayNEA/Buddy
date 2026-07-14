@@ -7,7 +7,8 @@ export const COMPONENT_TYPES = [
 
 export const TOKENS = {
   fontFamily: '-apple-system, "SF Pro Display", "SF Pro Text", system-ui, sans-serif',
-  radius: { sm: 10, card: 14, sheet: 20 },
+  // Refined neutral default: tight 8px radius reads as "designed", not a wireframe.
+  radius: { sm: 8, card: 8, sheet: 20 },
   spacing: [4, 8, 12, 16, 24, 32, 48, 64],
   shadow: '0 2px 8px rgba(0,0,0,0.08)',
   motion: { duration: '300ms', easing: 'cubic-bezier(0.34,1.56,0.64,1)' },

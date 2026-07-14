@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import mermaid from 'mermaid';
 import MockupRenderer from './mockup/MockupRenderer';
 import FlipCard from './mockup/FlipCard';
+import FlowChart from './mockup/FlowChart';
+import MockupErrorBoundary from './mockup/ErrorBoundary';
 
 mermaid.initialize({
   startOnLoad: true,
@@ -17,11 +19,38 @@ mermaid.initialize({
   themeVariables: { fontSize: '18px' },
 });
 
+// Map high-level status text to badge image assets — the buddy state indicator, bottom-left
+const STATUS_IMAGES = {
+  'Idle': '/images/Off.svg',
+  'Hearing': '/images/listening.svg',
+  'Listening': '/images/listening.svg',
+  'Waiting': '/images/waiting.svg',
+  'Processing': '/images/generating.svg',
+  'Generating': '/images/generating.svg',
+  'Zipping': '/images/generating.svg',
+  'Done': '/images/generated.svg',
+  'Saved!': '/images/generated.svg',
+  default: '/images/Off.svg',
+};
+
+const STATUS_COLORS = {
+  Idle: '#374151',
+  Hearing: '#dc2626',
+  Listening: '#dc2626',
+  Waiting: '#2563eb',
+  Processing: '#ea580c',
+  Generating: '#ea580c',
+  Zipping: '#ea580c',
+  Done: '#16a34a',
+  'Saved!': '#16a34a',
+  default: '#374151',
+};
+
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 const CONTACT_EMAIL = (import.meta.env.VITE_CONTACT_EMAIL || 'failennaselta@gmail.com').trim();
 const DEMO_TOKEN_KEY = 'buddy_demo_token';
 const DEMO_REMAINING_KEY = 'buddy_demo_remaining';
-const DEMO_LIMIT = 3;
+const DEMO_LIMIT = 9999;
 
 const SPEAKER_COLORS = ['#7c5cfc', '#0891b2', '#d97706', '#16a34a', '#dc2626', '#9333ea'];
 
@@ -104,7 +133,7 @@ function ParticipantSelector({ onSelect }) {
 }
 
 // ─── Single speaker panel ─────────────────────────────────────────────────────
-function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, status, isGenerating, blobPos, isMerged, vibeMode, isActiveSpeaker, onClaim }) {
+function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, status, isGenerating, blobPos, isMerged, vibeMode, isActiveSpeaker, onClaim, isVideoMode }) {
   const mermaidNodeRef = useRef(null);
   const [imgError, setImgError] = useState(false);
   const currentItem = history[currentIndex];
@@ -185,6 +214,25 @@ function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, sta
                 <div key={`diagram-${currentItem.id}`} className="stage-diagram">
                   <div ref={setMermaidRef} className="mermaid" />
                 </div>
+              ) : currentItem.mode === 'VIDEO' ? (
+                !(currentItem.video_url || currentItem.image_url) ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-black/80">
+                    <div className="text-4xl mb-4">⚠️</div>
+                    <p className="text-red-400 font-bold mb-2">Video Generation Failed</p>
+                  </div>
+                ) : imgError ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-black/80">
+                    <div className="text-4xl mb-4">❌</div>
+                    <p className="text-red-400 font-bold mb-2">Failed to Load</p>
+                  </div>
+                ) : (
+                  <video
+                    src={currentItem.video_url || currentItem.image_url}
+                    className="stage-media"
+                    autoPlay loop muted playsInline
+                    onError={() => setImgError(true)}
+                  />
+                )
               ) : !currentItem.image_url ? (
                 <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-black/80">
                   <div className="text-4xl mb-4">⚠️</div>
@@ -233,7 +281,9 @@ function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, sta
           className="panel-status"
           style={{ color: status === 'Done' ? '#16a34a' : (isMerged ? '#7c5cfc' : color) }}
         >
-          {status === 'Generating' ? 'Generating...' : 'Done'}
+          {status === 'Generating'
+            ? (isVideoMode ? 'Generating video... this can take a few minutes' : 'Generating...')
+            : 'Done'}
         </div>
       )}
     </div>
@@ -274,6 +324,12 @@ export default function App() {
   const sliceTimerRef = useRef(null);
   const pitchSampleIntervalRef = useRef(null);
   const hearingResetRef = useRef(null);
+  // Mockup mode: cut a chunk only after a speech pause, not on a blind timer
+  const lastSpeechAtRef = useRef(0);      // timestamp of most recent above-threshold audio
+  const speechSinceCutRef = useRef(false); // has the user spoken at all since the last chunk was sent
+  const mockupCuttingRef = useRef(false);  // guard against overlapping cuts
+  const mockupBusyRef = useRef(false);     // a /mockup request is in flight — keep recording, don't send yet
+  const chunkStartedAtRef = useRef(0);     // when the current recording began (safety-cap long monologues)
 
   // Manual speaker claim — null = auto-detect, 0..N-1 = claimed by that panel
   const [activeSpeaker, setActiveSpeaker] = useState(null);
@@ -290,7 +346,9 @@ export default function App() {
   const [mockupCurrentIdx, setMockupCurrentIdx] = useState(0);
   const [mockupIsGenerating, setMockupIsGenerating] = useState(false);
   const [mockupError, setMockupError] = useState(null);
+  const [mockupActiveScreenId, setMockupActiveScreenId] = useState(null); // shared between FlowChart and the mockup frame
   const mockupPreviousSpecRef = useRef(null);
+  const mockupPendingRef = useRef([]); // no-op'd speech fragments awaiting enough combined intent
   const sendMockupAudioRef = useRef(null);
 
   // Blob water animation
@@ -322,7 +380,13 @@ export default function App() {
   const [demoUsesLeft, setDemoUsesLeft] = useState(() => {
     try {
       const s = localStorage.getItem(DEMO_REMAINING_KEY);
-      return s !== null ? parseInt(s, 10) : DEMO_LIMIT;
+      const parsed = s !== null ? parseInt(s, 10) : DEMO_LIMIT;
+      // Stale caps from a lower historical DEMO_LIMIT shouldn't stick around forever.
+      if (!Number.isFinite(parsed) || parsed < 10) {
+        localStorage.removeItem(DEMO_REMAINING_KEY);
+        return DEMO_LIMIT;
+      }
+      return parsed;
     } catch { return DEMO_LIMIT; }
   });
 
@@ -417,6 +481,7 @@ export default function App() {
 
     formData.append('history_json', JSON.stringify(historySummary));
     formData.append('demo_token', demoToken);
+    formData.append('generation_mode', appModeRef.current === 'video' ? 'video' : 'image');
 
     try {
       const res = await axios.post(`${API_BASE}/upload-audio`, formData);
@@ -450,20 +515,30 @@ export default function App() {
     }
   };
 
-  // ── Mockup audio: send 2.5s chunks to /mockup ─────────────────────────────
+  // ── Mockup audio: send speech chunks to /mockup ────────────────────────────
   const sendMockupAudio = async (blob) => {
+    mockupBusyRef.current = true; // hold off new cuts until this returns; keep recording meanwhile
     setMockupIsGenerating(true);
     setMockupError(null);
     const formData = new FormData();
     formData.append('file', blob, 'voice.wav');
     formData.append('previous_spec_json', JSON.stringify(mockupPreviousSpecRef.current));
+    // Fragments that no-op'd so far — lets the model combine "for me a blue" + "iPhone app" across chunks
+    formData.append('context_text', mockupPendingRef.current.join(' '));
     formData.append('demo_token', demoToken);
     try {
       const res = await axios.post(`${API_BASE}/mockup`, formData);
-      if (res.data.noOp) return;
+      if (res.data.noOp) {
+        // Remember real (non-hallucinated) fragments so the next chunk can build on them
+        if (res.data.transcript && !res.data.hallucination) {
+          mockupPendingRef.current = [...mockupPendingRef.current, res.data.transcript].slice(-8);
+        }
+        return;
+      }
       if (res.data.error) { setMockupError('oops'); return; }
       const spec = res.data.spec;
       mockupPreviousSpecRef.current = spec;
+      mockupPendingRef.current = []; // consumed into the spec
       const iterNum = spec.iterationNumber || (mockupIterations.length + 1);
       const newIteration = {
         iterationNumber: iterNum, spec,
@@ -495,11 +570,74 @@ export default function App() {
       }
     } finally {
       setMockupIsGenerating(false);
+      mockupBusyRef.current = false;
+      // Start a fresh 3s listening window after each generation so the next chunk
+      // isn't fired instantly by speech captured mid-generation (prevents rapid-fire gens).
+      lastSpeechAtRef.current = Date.now();
+      chunkStartedAtRef.current = Date.now();
     }
   };
 
   // Keep ref current so slice timer can call latest closure
   useEffect(() => { sendMockupAudioRef.current = sendMockupAudio; });
+
+  // ── Manual (non-voice) mockup edits — e.g. rewiring the flowchart by drag ──
+  // Clones the latest spec, lets a mutator change it, and pushes a new iteration
+  // exactly like a voice edit would, so it's undoable via the flip-card history nav.
+  const applyMockupSpecEdit = (mutator, changeLogEntry) => {
+    const current = mockupPreviousSpecRef.current;
+    if (!current) return;
+    const cloned = JSON.parse(JSON.stringify(current));
+    const changed = mutator(cloned);
+    if (!changed) return;
+    cloned.iterationNumber = (mockupIterations.length || 0) + 1;
+    cloned.previousIterationRef = current.iterationNumber ?? null;
+    cloned.changeLog = [changeLogEntry];
+    mockupPreviousSpecRef.current = cloned;
+    const newIteration = {
+      iterationNumber: cloned.iterationNumber, spec: cloned,
+      transcript: '(flow edit)', changeLog: cloned.changeLog,
+    };
+    setMockupIterations(prev => {
+      const next = [...prev, newIteration];
+      setMockupCurrentIdx(next.length - 1);
+      return next;
+    });
+  };
+
+  // Dragging a connector from one flowchart node onto another rewires that screen's
+  // primary outgoing link: an existing Button/ListRow/list-row target if there is one,
+  // otherwise the first Button, otherwise the first list row (screens built from a List
+  // — which the mockup prompt prefers over loose buttons — usually have no Button at all).
+  const handleFlowRewire = (fromScreenId, toScreenId) => {
+    applyMockupSpecEdit((spec) => {
+      const screen = spec.screens?.find(s => s.id === fromScreenId);
+      if (!screen) return false;
+      let firstWithTarget = null;
+      let firstButton = null;
+      let firstListRow = null;
+      const walk = (list) => {
+        for (const c of list || []) {
+          if ((c.type === 'Button' || c.type === 'ListRow') && c.props) {
+            if (!firstButton && c.type === 'Button') firstButton = c.props;
+            if (!firstWithTarget && c.props.target) firstWithTarget = c.props;
+          }
+          if (c.type === 'List') {
+            for (const row of c.props?.rows || []) {
+              if (!firstWithTarget && row.target) firstWithTarget = row;
+              if (!firstListRow) firstListRow = row;
+            }
+          }
+          if (c.type === 'Card' && Array.isArray(c.props?.components)) walk(c.props.components);
+        }
+      };
+      walk(screen.components);
+      const edgeTarget = firstWithTarget || firstButton || firstListRow;
+      if (!edgeTarget) return false;
+      edgeTarget.target = toScreenId;
+      return true;
+    }, `rewired flow: ${fromScreenId} → ${toScreenId}`);
+  };
 
   // ── Recording: 5-second rolling slices ────────────────────────────────────
   const startVibeSession = async () => {
@@ -525,36 +663,74 @@ export default function App() {
       recorderRef.current.startRecording();
       pitchSamplesRef.current = [];
 
+      lastSpeechAtRef.current = 0;
+      speechSinceCutRef.current = false;
+      mockupCuttingRef.current = false;
+      chunkStartedAtRef.current = Date.now();
+      const SPEECH_RMS = 0.015;   // above this = someone is talking
+      const MOCKUP_PAUSE_MS = 3000; // silence gap that ends an utterance in mockup mode
+      const MOCKUP_MAX_MS = 20000;  // hard cap so a nonstop monologue still generates
+
       pitchSampleIntervalRef.current = setInterval(() => {
         if (!analyserRef.current || !audioCtxRef.current) return;
         const timeData = new Float32Array(analyserRef.current.fftSize);
         analyserRef.current.getFloatTimeDomainData(timeData);
         const rms = Math.sqrt(timeData.reduce((s, v) => s + v * v, 0) / timeData.length);
-        if (rms < 0.015) return;
-        const pitch = detectDominantPitch(analyserRef.current, audioCtxRef.current.sampleRate);
-        if (pitch) pitchSamplesRef.current.push(pitch);
-        setSpeakerStatuses(p => p.map(s => s === 'Listening' ? 'Hearing' : s));
-        clearTimeout(hearingResetRef.current);
-        hearingResetRef.current = setTimeout(() => {
-          setSpeakerStatuses(p => p.map(s => s === 'Hearing' ? 'Listening' : s));
-        }, 400);
+
+        if (rms >= SPEECH_RMS) {
+          lastSpeechAtRef.current = Date.now();
+          speechSinceCutRef.current = true;
+          const pitch = detectDominantPitch(analyserRef.current, audioCtxRef.current.sampleRate);
+          if (pitch) pitchSamplesRef.current.push(pitch);
+          setSpeakerStatuses(p => p.map(s => s === 'Listening' ? 'Hearing' : s));
+          clearTimeout(hearingResetRef.current);
+          hearingResetRef.current = setTimeout(() => {
+            setSpeakerStatuses(p => p.map(s => s === 'Hearing' ? 'Listening' : s));
+          }, 400);
+        } else if (
+          appModeRef.current === 'mockup' &&
+          speechSinceCutRef.current &&
+          !mockupCuttingRef.current &&
+          !mockupBusyRef.current &&
+          Date.now() - lastSpeechAtRef.current >= MOCKUP_PAUSE_MS
+        ) {
+          // 3s pause after speech → the phrase is done, cut and send it.
+          // Skipped while a request is in flight so we keep recording (not lose speech)
+          // and the next chunk builds on the freshly-returned spec.
+          cutChunk();
+        }
+
+        // Safety cap: someone talking nonstop past the max window → cut anyway (only when free)
+        if (
+          appModeRef.current === 'mockup' &&
+          speechSinceCutRef.current &&
+          !mockupCuttingRef.current &&
+          !mockupBusyRef.current &&
+          Date.now() - chunkStartedAtRef.current >= MOCKUP_MAX_MS
+        ) {
+          cutChunk();
+        }
       }, 150);
 
-      const chunkMs = appModeRef.current === 'mockup' ? 2500 : 5000;
-      sliceTimerRef.current = setInterval(() => {
+      // Cut the current recording, route the blob, and start a fresh recorder on the same stream.
+      const cutChunk = () => {
         if (!recorderRef.current || !streamRef.current?.active) return;
-        recorderRef.current.stopRecording(() => {
-          const blob = recorderRef.current.getBlob();
+        if (appModeRef.current === 'mockup') {
+          if (mockupCuttingRef.current) return;
+          mockupCuttingRef.current = true;
+        }
+        speechSinceCutRef.current = false;
+        const finishedRecorder = recorderRef.current;
+        finishedRecorder.stopRecording(() => {
+          const blob = finishedRecorder.getBlob();
 
           if (appModeRef.current === 'mockup') {
-            // All audio → single mockup stream, no speaker assignment
             if (blob.size > 5000 && sendMockupAudioRef.current) {
               sendMockupAudioRef.current(blob);
             }
           } else {
             const samples = pitchSamplesRef.current.splice(0);
             const count = participantCountRef.current;
-            // In merge mode, all audio goes to the single unified channel
             const speakerIdx = mergeModeRef.current ? 0
               : (activeSpeakerRef.current !== null ? activeSpeakerRef.current
               : assignSpeaker(samples, count));
@@ -567,12 +743,26 @@ export default function App() {
           }
 
           pitchSamplesRef.current.splice(0);
+          finishedRecorder.destroy();
+          // Fresh RecordRTC instance per chunk — reusing one via reset()+startRecording()
+          // silently dropped audio on most cycles (Whisper then hallucinated filler).
           if (streamRef.current?.active) {
-            recorderRef.current.reset();
+            recorderRef.current = new RecordRTC(streamRef.current, {
+              type: 'audio', mimeType: 'audio/wav',
+              recorderType: RecordRTC.StereoAudioRecorder, numberOfAudioChannels: 1,
+            });
             recorderRef.current.startRecording();
+            chunkStartedAtRef.current = Date.now();
           }
+          mockupCuttingRef.current = false;
         });
-      }, chunkMs);
+      };
+
+      // Image/Video: keep the steady 5s slice timer. Mockup is driven by the pause detector above.
+      sliceTimerRef.current = setInterval(() => {
+        if (appModeRef.current === 'mockup') return;
+        cutChunk();
+      }, 5000);
 
       setSpeakerStatuses(new Array(participantCountRef.current).fill('Listening'));
 
@@ -583,6 +773,8 @@ export default function App() {
 
   const stopVibeSession = () => {
     setVibeMode(false);
+    mockupBusyRef.current = false;
+    mockupCuttingRef.current = false;
     if (sliceTimerRef.current) { clearInterval(sliceTimerRef.current); sliceTimerRef.current = null; }
     if (pitchSampleIntervalRef.current) { clearInterval(pitchSampleIntervalRef.current); pitchSampleIntervalRef.current = null; }
     if (hearingResetRef.current) clearTimeout(hearingResetRef.current);
@@ -621,7 +813,9 @@ export default function App() {
     setMockupCurrentIdx(0);
     setMockupIsGenerating(false);
     setMockupError(null);
+    setMockupActiveScreenId(null);
     mockupPreviousSpecRef.current = null;
+    mockupPendingRef.current = [];
   };
 
   // ── Merge all speakers into one unified channel ────────────────────────────
@@ -722,10 +916,26 @@ export default function App() {
   const hasAnyHistory = appMode === 'mockup'
     ? mockupIterations.length > 0
     : speakerHistories.some(h => h.length > 0);
+
+  // Flowchart always reflects/edits the latest iteration; the flip-card deck can still
+  // browse history independently via mockupCurrentIdx.
+  const mockupLatestSpec = mockupIterations[mockupIterations.length - 1]?.spec || null;
+  const mockupIsOnLatest = mockupCurrentIdx === mockupIterations.length - 1;
+  const mockupEffectiveActiveScreenId = mockupActiveScreenId || mockupLatestSpec?.screens?.[0]?.id || null;
   const canMerge = !mergeMode
     && participantCount > 1
     && speakerHistories.filter(h => h.length > 0).length >= 2;
   const totalUsed = DEMO_LIMIT - demoUsesLeft;
+
+  // Unified buddy status indicator — same badge for Image, Mockup, and Video modes
+  const displayStatus = appMode === 'mockup'
+    ? (mockupIsGenerating ? 'Generating' : (vibeMode ? 'Listening' : 'Idle'))
+    : (speakerStatuses.includes('Generating') ? 'Generating'
+      : speakerStatuses.includes('Hearing') ? 'Hearing'
+      : speakerStatuses.includes('Listening') ? 'Listening'
+      : speakerStatuses.includes('Done') ? 'Done'
+      : 'Idle');
+  const statusImageSrc = STATUS_IMAGES[displayStatus] || STATUS_IMAGES.default;
 
   return (
     <div className="app">
@@ -772,6 +982,38 @@ export default function App() {
             <RotateCcw size={22} strokeWidth={2} />
           </button>
 
+          {/* Buddy status badge — bottom-left, same for Image, Mockup, and Video modes. Drag it, then it springs back home. */}
+          <motion.div
+            drag
+            dragMomentum={false}
+            dragElastic={0.15}
+            dragSnapToOrigin
+            style={{ position: 'fixed', bottom: '4%', left: '4%', zIndex: 50 }}
+            className="status-badge-wrapper"
+          >
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={statusImageSrc}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="status-badge-inner"
+              >
+                <img
+                  src={statusImageSrc}
+                  alt={`Status: ${displayStatus}`}
+                  style={{ height: '80px', width: 'auto', pointerEvents: 'none' }}
+                  className="status-badge-label"
+                  draggable={false}
+                />
+                <span className="status-text" style={{ color: STATUS_COLORS[displayStatus] ?? STATUS_COLORS.default }}>
+                  {displayStatus}
+                </span>
+              </motion.div>
+            </AnimatePresence>
+          </motion.div>
+
           <div className={`app-inner${participantCount > 2 && !mergeMode ? ' app-inner--wide' : ''}`}>
             <header className="header header--fixed">
               <button type="button" onClick={() => setIntroPhase(0)} className="header-logo-btn" aria-label="Replay intro">
@@ -784,26 +1026,33 @@ export default function App() {
               transition={{ delay: 0.25, duration: 0.5, ease: 'easeOut' }}
               className="app-main"
             >
-              {/* Mode toggle */}
-              {!vibeMode && (
-                <div className="mode-toggle-row">
-                  <button
-                    className={`mode-toggle-pill${appMode === 'image' ? ' mode-toggle-pill--active' : ''}`}
-                    onClick={() => setAppMode('image')}
-                  >
-                    Image
-                  </button>
-                  <button
-                    className={`mode-toggle-pill${appMode === 'mockup' ? ' mode-toggle-pill--active' : ''}`}
-                    onClick={() => setAppMode('mockup')}
-                  >
-                    Mockup
-                  </button>
-                </div>
-              )}
+              {/* Mode toggle — always visible, locked while session is active */}
+              <div className="mode-toggle-row">
+                <button
+                  className={`mode-toggle-pill${appMode === 'image' ? ' mode-toggle-pill--active' : ''}${vibeMode ? ' mode-toggle-pill--locked' : ''}`}
+                  onClick={() => { if (!vibeMode) setAppMode('image'); }}
+                  title={vibeMode ? 'Stop session to switch mode' : undefined}
+                >
+                  Image
+                </button>
+                <button
+                  className={`mode-toggle-pill${appMode === 'mockup' ? ' mode-toggle-pill--active' : ''}${vibeMode ? ' mode-toggle-pill--locked' : ''}`}
+                  onClick={() => { if (!vibeMode) setAppMode('mockup'); }}
+                  title={vibeMode ? 'Stop session to switch mode' : undefined}
+                >
+                  Mockup
+                </button>
+                <button
+                  className={`mode-toggle-pill${appMode === 'video' ? ' mode-toggle-pill--active' : ''}${vibeMode ? ' mode-toggle-pill--locked' : ''}`}
+                  onClick={() => { if (!vibeMode) setAppMode('video'); }}
+                  title={vibeMode ? 'Stop session to switch mode' : undefined}
+                >
+                  Video
+                </button>
+              </div>
 
-              {/* ── Image mode panels ── */}
-              {appMode === 'image' && (
+              {/* ── Image / Video mode panels ── */}
+              {(appMode === 'image' || appMode === 'video') && (
                 <>
                   <AnimatePresence mode="wait">
                     {mergeMode ? (
@@ -828,6 +1077,7 @@ export default function App() {
                           isGenerating={speakerGenerating[0] || isSynthesizing}
                           blobPos={blobPos}
                           isMerged={true}
+                          isVideoMode={appMode === 'video'}
                           onPrev={() => setSpeakerIndices(p => { const n=[...p]; n[0]=Math.max(0,n[0]-1); return n; })}
                           onNext={() => setSpeakerIndices(p => { const n=[...p]; n[0]=Math.min((speakerHistories[0]||[]).length-1,n[0]+1); return n; })}
                         />
@@ -858,6 +1108,7 @@ export default function App() {
                             blobPos={blobPos}
                             isMerged={false}
                             vibeMode={vibeMode}
+                            isVideoMode={appMode === 'video'}
                             isActiveSpeaker={activeSpeaker === i}
                             onClaim={() => setActiveSpeaker(prev => prev === i ? null : i)}
                             onPrev={() => setSpeakerIndices(p => { const n=[...p]; n[i]=Math.max(0,n[i]-1); return n; })}
@@ -891,6 +1142,26 @@ export default function App() {
 
               {/* ── Mockup mode panel ── */}
               {appMode === 'mockup' && (
+                <MockupErrorBoundary onReset={resetSession}>
+                <div className="mockup-with-flow">
+                  {/* User-flow chart — screens as nodes, wired by voice, click to view, drag to reposition/rewire */}
+                  <div className="flowchart-panel">
+                    <div className="flowchart-panel-label">user flow</div>
+                    <FlowChart
+                      spec={mockupLatestSpec}
+                      activeScreenId={mockupEffectiveActiveScreenId}
+                      onSelectScreen={(id) => {
+                        setMockupActiveScreenId(id);
+                        setMockupCurrentIdx(mockupIterations.length - 1);
+                      }}
+                      onRewire={handleFlowRewire}
+                    />
+                  </div>
+
+                  {mockupIterations.length > 0 && (
+                    <div className="flow-connector" aria-hidden="true">→</div>
+                  )}
+
                 <div className="mockup-mode-wrap">
                   <div className="mockup-deck">
                     {/* Empty state */}
@@ -920,7 +1191,13 @@ export default function App() {
                     {mockupIterations.length > 0 && (
                       <>
                         <FlipCard
-                          front={<MockupRenderer spec={mockupIterations[mockupCurrentIdx].spec} />}
+                          front={
+                            <MockupRenderer
+                              spec={mockupIterations[mockupCurrentIdx].spec}
+                              activeScreenId={mockupIsOnLatest ? mockupEffectiveActiveScreenId : undefined}
+                              onScreenChange={mockupIsOnLatest ? setMockupActiveScreenId : undefined}
+                            />
+                          }
                           transcript={mockupIterations[mockupCurrentIdx].transcript}
                           changeLog={mockupIterations[mockupCurrentIdx].changeLog}
                           iterationNumber={mockupIterations[mockupCurrentIdx].iterationNumber}
@@ -956,6 +1233,8 @@ export default function App() {
                     )}
                   </div>
                 </div>
+                </div>
+                </MockupErrorBoundary>
               )}
 
               {/* Controls */}

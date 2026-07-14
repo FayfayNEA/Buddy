@@ -33,49 +33,59 @@ export default function FlipCard({ front, transcript, changeLog, iterationNumber
     }
   };
 
+  // Match the card size to the mockup's form factor (phone vs. desktop browser)
+  const platform = String(front?.props?.spec?.platform || front?.props?.spec?.formFactor || '').toLowerCase();
+  const isWeb = ['web', 'website', 'desktop', 'browser'].includes(platform);
+  const cardSize = isWeb ? { width: 880, height: 560 } : { width: 375, height: 667 };
+
   return (
-    <div
-      className={`flip-card${flipped ? ' flip-card--flipped' : ''}`}
-      onClick={() => setFlipped(f => !f)}
-    >
-      <div className="flip-card-inner">
-        {/* Front: the live mockup */}
-        <div className="flip-card-face flip-card-front">
-          {front}
-          <div className="flip-card-hint">tap to see transcript</div>
-        </div>
+    <div className={`flip-card-shell${isWeb ? ' flip-card-shell--web' : ''}`}>
+      {/* Side toggle — flips the card without stealing clicks from the live mockup */}
+      <button
+        className="flip-card-toggle"
+        onClick={() => setFlipped(f => !f)}
+        title={flipped ? 'Back to mockup' : 'See transcript'}
+      >
+        {flipped ? '‹ mockup' : 'transcript ›'}
+      </button>
 
-        {/* Back: transcript + changeLog */}
-        <div className="flip-card-face flip-card-back">
-          <div className="flip-card-back-inner">
-            <div className="flip-card-back-header">
-              <span className="flip-card-iteration-badge">iteration {iterationNumber}</span>
-              <button
-                className={`flip-card-export-btn${downloading ? ' flip-card-export-btn--loading' : ''}`}
-                onClick={handleDownload}
-                disabled={downloading}
-              >
-                {downloading ? '…' : '↓'}
-              </button>
-            </div>
+      <div className={`flip-card${flipped ? ' flip-card--flipped' : ''}`} style={cardSize}>
+        <div className="flip-card-inner">
+          {/* Front: the live mockup — fully interactive, clicks go to the prototype */}
+          <div className="flip-card-face flip-card-front">
+            {front}
+          </div>
 
-            <div className="flip-card-section">
-              <div className="flip-card-section-label">transcript</div>
-              <div className="flip-card-transcript">
-                {transcript || <em style={{ opacity: 0.5 }}>no transcript</em>}
+          {/* Back: transcript + changeLog */}
+          <div className="flip-card-face flip-card-back">
+            <div className="flip-card-back-inner">
+              <div className="flip-card-back-header">
+                <span className="flip-card-iteration-badge">iteration {iterationNumber}</span>
+                <button
+                  className={`flip-card-export-btn${downloading ? ' flip-card-export-btn--loading' : ''}`}
+                  onClick={handleDownload}
+                  disabled={downloading}
+                >
+                  {downloading ? '…' : '↓'}
+                </button>
               </div>
-            </div>
 
-            {Array.isArray(changeLog) && changeLog.length > 0 && (
               <div className="flip-card-section">
-                <div className="flip-card-section-label">changes</div>
-                <ul className="flip-card-changelog">
-                  {changeLog.map((entry, i) => <li key={i}>{entry}</li>)}
-                </ul>
+                <div className="flip-card-section-label">transcript</div>
+                <div className="flip-card-transcript">
+                  {transcript || <em style={{ opacity: 0.5 }}>no transcript</em>}
+                </div>
               </div>
-            )}
 
-            <div className="flip-card-hint">tap to flip back</div>
+              {Array.isArray(changeLog) && changeLog.length > 0 && (
+                <div className="flip-card-section">
+                  <div className="flip-card-section-label">changes</div>
+                  <ul className="flip-card-changelog">
+                    {changeLog.map((entry, i) => <li key={i}>{entry}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
