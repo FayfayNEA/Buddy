@@ -891,8 +891,10 @@ export default function MockupRenderer({ spec, activeScreenId, onScreenChange })
   const isWeb = ['web', 'website', 'desktop', 'browser'].includes(
     String(spec.platform || spec.formFactor || '').toLowerCase()
   );
-  const W = isWeb ? 880 : 375;
-  const H = isWeb ? 560 : 667;
+  // Sized to fit the mockup page within one viewport with no scrolling — a real 375×667
+  // phone plus the header/toggle/controls chrome around it doesn't fit most laptop screens.
+  const W = isWeb ? 880 : 320;
+  const H = isWeb ? 560 : 490;
 
   const body = (
     <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>

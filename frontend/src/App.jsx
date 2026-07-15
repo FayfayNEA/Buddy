@@ -50,6 +50,10 @@ const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8000').repla
 const CONTACT_EMAIL = (import.meta.env.VITE_CONTACT_EMAIL || 'failennaselta@gmail.com').trim();
 const DEMO_TOKEN_KEY = 'buddy_demo_token';
 const DEMO_REMAINING_KEY = 'buddy_demo_remaining';
+const DEMO_RESET_VERSION_KEY = 'buddy_demo_reset_version';
+// Bump this whenever demo state should start fresh for everyone (new demo period,
+// limit changed, etc.) — avoids ever needing someone to manually clear localStorage again.
+const DEMO_RESET_VERSION = '2026-07-14-v1';
 const DEMO_LIMIT = 4;
 
 const SPEAKER_COLORS = ['#7c5cfc', '#0891b2', '#d97706', '#16a34a', '#dc2626', '#9333ea'];
@@ -373,6 +377,18 @@ export default function App() {
     return () => cancelAnimationFrame(blobRafRef.current);
   }, []);
 
+  // One-time reset: if this browser's demo state predates DEMO_RESET_VERSION (a prior
+  // testing session, an old limit, etc.), wipe it before anything reads it. Bumping the
+  // version constant is now the ONLY way demo state should ever need clearing — no more
+  // "open devtools and delete localStorage" instructions.
+  try {
+    if (localStorage.getItem(DEMO_RESET_VERSION_KEY) !== DEMO_RESET_VERSION) {
+      localStorage.removeItem(DEMO_TOKEN_KEY);
+      localStorage.removeItem(DEMO_REMAINING_KEY);
+      localStorage.setItem(DEMO_RESET_VERSION_KEY, DEMO_RESET_VERSION);
+    }
+  } catch { /* ignore */ }
+
   // Demo token
   const [demoToken, setDemoToken] = useState(() => {
     try { return localStorage.getItem(DEMO_TOKEN_KEY) || ''; } catch { return ''; }
@@ -479,7 +495,8 @@ export default function App() {
 
     formData.append('history_json', JSON.stringify(historySummary));
     formData.append('demo_token', demoToken);
-    formData.append('generation_mode', appModeRef.current === 'video' ? 'video' : 'image');
+    // Video has no dedicated mode toggle anymore — the backend auto-detects it from speech.
+    formData.append('generation_mode', 'image');
 
     try {
       const res = await axios.post(`${API_BASE}/upload-audio`, formData);
@@ -936,7 +953,7 @@ export default function App() {
   const statusImageSrc = STATUS_IMAGES[displayStatus] || STATUS_IMAGES.default;
 
   return (
-    <div className="app">
+    <div className={`app${appMode === 'mockup' ? ' app--mockup' : ''}`}>
 
       {/* ── Phase 0: Spiral ── */}
       <AnimatePresence mode="wait">
@@ -1040,17 +1057,10 @@ export default function App() {
                 >
                   Mockup
                 </button>
-                <button
-                  className={`mode-toggle-pill${appMode === 'video' ? ' mode-toggle-pill--active' : ''}${vibeMode ? ' mode-toggle-pill--locked' : ''}`}
-                  onClick={() => { if (!vibeMode) setAppMode('video'); }}
-                  title={vibeMode ? 'Stop session to switch mode' : undefined}
-                >
-                  Video
-                </button>
               </div>
 
-              {/* ── Image / Video mode panels ── */}
-              {(appMode === 'image' || appMode === 'video') && (
+              {/* ── Image mode panels — say "make a video of..." and it auto-produces video ── */}
+              {appMode === 'image' && (
                 <>
                   <AnimatePresence mode="wait">
                     {mergeMode ? (
@@ -1075,7 +1085,7 @@ export default function App() {
                           isGenerating={speakerGenerating[0] || isSynthesizing}
                           blobPos={blobPos}
                           isMerged={true}
-                          isVideoMode={appMode === 'video'}
+                          isVideoMode={speakerHistories[0]?.slice(-1)[0]?.mode === 'VIDEO'}
                           onPrev={() => setSpeakerIndices(p => { const n=[...p]; n[0]=Math.max(0,n[0]-1); return n; })}
                           onNext={() => setSpeakerIndices(p => { const n=[...p]; n[0]=Math.min((speakerHistories[0]||[]).length-1,n[0]+1); return n; })}
                         />
@@ -1106,7 +1116,7 @@ export default function App() {
                             blobPos={blobPos}
                             isMerged={false}
                             vibeMode={vibeMode}
-                            isVideoMode={appMode === 'video'}
+                            isVideoMode={speakerHistories[i]?.slice(-1)[0]?.mode === 'VIDEO'}
                             isActiveSpeaker={activeSpeaker === i}
                             onClaim={() => setActiveSpeaker(prev => prev === i ? null : i)}
                             onPrev={() => setSpeakerIndices(p => { const n=[...p]; n[i]=Math.max(0,n[i]-1); return n; })}

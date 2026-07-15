@@ -36,7 +36,7 @@ export default function FlipCard({ front, transcript, changeLog, iterationNumber
   // Match the card size to the mockup's form factor (phone vs. desktop browser)
   const platform = String(front?.props?.spec?.platform || front?.props?.spec?.formFactor || '').toLowerCase();
   const isWeb = ['web', 'website', 'desktop', 'browser'].includes(platform);
-  const cardSize = isWeb ? { width: 880, height: 560 } : { width: 375, height: 667 };
+  const cardSize = isWeb ? { width: 880, height: 560 } : { width: 320, height: 490 };
 
   return (
     <div className={`flip-card-shell${isWeb ? ' flip-card-shell--web' : ''}`}>
