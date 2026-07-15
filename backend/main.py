@@ -69,6 +69,16 @@ _video_demo_tokens: dict = {}     # token -> use_count (video-only)
 _video_demo_ip_usage: dict = {}   # client_ip -> use_count (video-only)
 _demo_token_lock = Lock()
 
+# Requests from these IPs never hit the demo gate — always reads back as "0 used".
+# Defaults to loopback so running/testing the backend locally is never demo-limited.
+# Real deployments sit behind a reverse proxy that forwards the actual visitor IP via
+# X-Forwarded-For, so this never exempts real demo visitors.
+_DEMO_UNLIMITED_IPS = {
+    ip.strip()
+    for ip in os.getenv("DEMO_UNLIMITED_IPS", "127.0.0.1,::1,localhost").split(",")
+    if ip.strip()
+}
+
 
 def _client_ip(request: Request) -> str:
     """Best-effort real client IP. Cloud Run/Railway and other proxies forward it in
@@ -81,25 +91,32 @@ def _client_ip(request: Request) -> str:
 
 def _resolve_demo_token(token: str, ip: str = "") -> tuple:
     """Return (token, uses_so_far). Creates a new token if unknown. uses_so_far is the
-    larger of the token-based and IP-based counts."""
+    larger of the token-based and IP-based counts (always 0 for an unlimited IP)."""
     with _demo_token_lock:
         resolved = token if (token and token in _demo_tokens) else str(uuid.uuid4())
         if resolved not in _demo_tokens:
             _demo_tokens[resolved] = 0
+        if ip in _DEMO_UNLIMITED_IPS:
+            return resolved, 0
         uses_so_far = max(_demo_tokens.get(resolved, 0), _demo_ip_usage.get(ip, 0))
         return resolved, uses_so_far
 
 
 def _increment_demo_token(token: str, ip: str = "") -> int:
-    """Increment both counters and return the new effective (max) total."""
+    """Increment both counters and return the new effective (max) total (always 0 for an
+    unlimited IP, so callers computing "remaining" see the full allowance every time)."""
     with _demo_token_lock:
         _demo_tokens[token] = _demo_tokens.get(token, 0) + 1
         _demo_ip_usage[ip] = _demo_ip_usage.get(ip, 0) + 1
+        if ip in _DEMO_UNLIMITED_IPS:
+            return 0
         return max(_demo_tokens[token], _demo_ip_usage[ip])
 
 
 def _video_demo_uses(token: str, ip: str) -> int:
     with _demo_token_lock:
+        if ip in _DEMO_UNLIMITED_IPS:
+            return 0
         return max(_video_demo_tokens.get(token, 0), _video_demo_ip_usage.get(ip, 0))
 
 
@@ -107,6 +124,8 @@ def _increment_video_demo(token: str, ip: str) -> int:
     with _demo_token_lock:
         _video_demo_tokens[token] = _video_demo_tokens.get(token, 0) + 1
         _video_demo_ip_usage[ip] = _video_demo_ip_usage.get(ip, 0) + 1
+        if ip in _DEMO_UNLIMITED_IPS:
+            return 0
         return max(_video_demo_tokens[token], _video_demo_ip_usage[ip])
 
 
@@ -343,8 +362,23 @@ async def upload_audio(
     junk_phrases = (
         "thank you for watching",
         "thanks for watching",
+        "thank you for joining",
+        "thanks for joining",
+        "thank you so much for joining",
+        "thank you all for watching",
+        "thanks everyone",
+        "thanks everybody",
         "please subscribe",
+        "don't forget to subscribe",
+        "like and subscribe",
+        "hit the subscribe",
+        "see you in the next video",
+        "see you next time",
         "subtitle by",
+        "subtitles by",
+        "transcription by",
+        "transcribed by",
+        "captions by",
         "amara.org",
         # Whisper loop hallucinations
         "we'll move on to the",
@@ -364,7 +398,9 @@ async def upload_audio(
             }
         )
         return {"error": "Silence"}
-    if tl in ("you", "thank you.", "thanks.", "subtitle", "silence", "bye"):
+    if tl in ("you", "thank you.", "thanks.", "thank you very much.", "thank you so much.",
+              "subtitle", "silence", "bye", "bye-bye", "bye bye", "goodbye", "good bye",
+              "hello", "hi", "ok", "okay", "take care", "have a nice day", "have a great day"):
         trace_step("filter", rejected=True, reason="junk_exact")
         _push_trace(
             {
@@ -378,26 +414,24 @@ async def upload_audio(
         )
         return {"error": "Silence"}
 
-    # Repetition loop detector — catches any Whisper hallucination that repeats a phrase 4+ times.
-    # Split into 4-word ngrams and flag if any appears 4+ times.
+    # Repetition loop detector — catches Whisper stuttering the same short phrase back-to-back
+    # (e.g. "thank you thank you thank you"). Requires CONSECUTIVE repeats, not just the same
+    # phrase recurring somewhere in a longer real transcript, which is common and legitimate.
     _words = tl.split()
-    if len(_words) >= 16:
-        _ngrams = [" ".join(_words[i:i+4]) for i in range(len(_words) - 3)]
-        _max_repeat = max(_ngrams.count(ng) for ng in set(_ngrams))
-        if _max_repeat >= 4:
-            trace_step("filter", rejected=True, reason="repetition_loop", max_repeat=_max_repeat)
-            logger.warning("[%s] Repetition loop detected (max_repeat=%d): %s", request_id, _max_repeat, tl[:120])
-            _push_trace(
-                {
-                    "request_id": request_id,
-                    "endpoint": "/upload-audio",
-                    "user_prompt": user_text,
-                    "outcome": "silence",
-                    "reason": "repetition_loop",
-                    "process_steps": process_steps,
-                }
-            )
-            return {"error": "Silence"}
+    if len(_words) >= 12 and _has_stutter_loop(_words):
+        trace_step("filter", rejected=True, reason="repetition_loop")
+        logger.warning("[%s] Repetition loop detected: %s", request_id, tl[:120])
+        _push_trace(
+            {
+                "request_id": request_id,
+                "endpoint": "/upload-audio",
+                "user_prompt": user_text,
+                "outcome": "silence",
+                "reason": "repetition_loop",
+                "process_steps": process_steps,
+            }
+        )
+        return {"error": "Silence"}
 
     # --- C. PARSE HISTORY ---
     # --- C. PARSE HISTORY ---
@@ -848,11 +882,11 @@ _MOCKUP_VALID_TYPES = {
 
 _MOCKUP_SYSTEM_PROMPT = """You are the world's foremost UI/UX designer — you create seamless, beautiful, Apple-quality interfaces that feel alive. You think in spatial layouts, micro-interactions, and human-centered flows. Every element you place serves a purpose and delights the user.
 
-You maintain a single evolving UI spec as JSON, updated every ~2.5 seconds from live group conversation. Multiple speakers may be talking about the same thing, refining each other's ideas out loud, disagreeing, joking, or just brainstorming vaguely. Your job is to turn that messy talk into a coherent, incrementally-evolving spec — never a literal transcript, never a guess dressed up as a decision.
+You maintain a single evolving UI spec as JSON, updated from live spoken design instructions. Multiple speakers may be talking about the same thing, refining each other's ideas out loud, disagreeing, joking, or just brainstorming vaguely. Your job is to turn that messy talk into a coherent, incrementally-evolving spec — never a literal transcript, never a guess dressed up as a decision.
 
 You will receive:
 1. The previous spec (or null if this is iteration 1)
-2. The new transcript chunk (~2.5s of raw speech, possibly mid-sentence, possibly multiple overlapping speakers, possibly a fragment with no clear subject)
+2. The new transcript chunk (a spoken utterance — may still be mid-thought, may include earlier fragments in context)
 
 CORE RULES:
 
@@ -879,7 +913,7 @@ CORE RULES:
 
 3. REFINEMENT OVER ADDITION. Rapid back-and-forth about the same idea modifies existing components, not duplicates them.
 
-4. WAIT FOR PRECISION. Pure filler with no product content (greetings, "um", silence artifacts) → no-op. But once a concrete app, screen, feature, or content type IS named, ACT — don't stall.
+4. WAIT FOR PRECISION — BUT DON'T STARVE GENERATION. Pure filler with no product content (greetings, "um", silence artifacts, song lyrics) → no-op. But once a concrete app, screen, feature, flow, or content type IS named — even imperfectly ("trucking app", "three screens", "settings page", "make the button blue") — ACT immediately. Prefer a solid first screen over another no-op.
 
 5. COMPOSE COMPLETE, REALISTIC SCREENS — BUT STAY UNCLUTTERED. This is the most important rule. When someone names an app or screen ("a music app home screen", "a settings page", "a chat app"), do NOT add a single lone Button. Build a real screen with realistic placeholder content, but keep it CALM, not crowded:
    - A NavBar is NOT automatic. Only add one when it earns its place: the screen has a real title worth showing, a back-target to a screen that led here, or a trailing action (Edit/Done/+). A top-level screen reached via the TabBar (a home feed, a full-bleed gallery) can be immersive and skip the NavBar entirely — real apps like Instagram/TikTok/Spotify's Now Playing routinely do this. Never add a NavBar just out of habit; an empty title bar with nothing in it is worse than no bar.
@@ -1026,24 +1060,114 @@ def _validate_mockup_spec(spec: dict) -> bool:
     return True
 
 
-# Whisper reliably hallucinates these on silent/near-silent chunks — never feed them to the spec model
+def _has_stutter_loop(words: list, min_repeats: int = 3) -> bool:
+    """True if the same short (1-4 word) phrase repeats back-to-back at least `min_repeats`
+    times in a row — the actual signature of a Whisper hallucination loop (e.g. "thank you
+    thank you thank you"). Deliberately requires CONSECUTIVE repeats, not just the same
+    phrase recurring naturally somewhere in a longer real transcript — describing an app's
+    flow ("go to the shipping page... go to the tracking page...") reuses phrases like
+    "go to the" plenty without ever being an actual stutter loop."""
+    n_words = len(words)
+    for n in (1, 2, 3, 4):
+        span = n * min_repeats
+        if n_words < span:
+            continue
+        for i in range(n_words - span + 1):
+            first = words[i:i + n]
+            if all(words[i + k * n:i + (k + 1) * n] == first for k in range(1, min_repeats)):
+                return True
+    return False
+
+
+# Whisper reliably hallucinates these on silent/near-silent chunks — never feed them to the spec model.
+# Kept as short, exact clause matches (post-split on punctuation) — see _is_hallucinated.
+# IMPORTANT: do NOT put bare words like "you"/"hi"/"ok" in a substring check against the
+# full transcript — that falsely nukes real sentences ("where you can go...").
 _WHISPER_HALLUCINATIONS = {
-    "you", "bye", "bye-bye", "hello", "thank you", "thanks", "thank you very much",
+    "you", "bye", "bye-bye", "bye bye", "hello", "hi", "ok", "okay",
+    "thank you", "thanks", "thank you very much", "thanks a lot", "thank you so much",
     "thank you for watching", "thanks for watching", "thank you for watching!",
-    "thank you for joining us", "thank you for your attention", "see you next time",
-    "subtitles by the amara.org community",
+    "thank you for watching this video", "thank you for watching this video!",
+    "thank you for joining us", "thank you for joining", "thank you for your attention",
+    "thank you all for watching", "thank you everyone", "thanks everyone", "thanks everybody",
+    "see you next time", "see you in the next video", "see you next video", "see you soon",
+    "see you later", "i'll see you next time", "i will see you next time",
+    "please subscribe", "please subscribe to my channel", "don't forget to subscribe",
+    "like and subscribe", "like, comment, and subscribe", "subscribe to my channel",
+    "subtitle", "subtitles", "subtitles by the amara.org community",
+    "transcription by castingwords", "captions by castingwords",
+    "translated by", "transcribed by",
+    "this video is not yet ready", "this video is not yet available",
+    "goodbye", "good bye", "have a nice day", "have a great day", "take care",
 }
+
+# Substrings that, when the WHOLE transcript is short, reliably indicate Whisper filled
+# near-silence with a stock sign-off/greeting rather than real speech. Unlike the exact-match
+# set above, these catch minor variations (e.g. "thank you so much for joining us today!").
+_HALLUCINATION_SUBSTRINGS = (
+    "thank you for joining", "thanks for joining", "thank you for watching",
+    "thanks for watching", "please subscribe", "don't forget to subscribe",
+    "like and subscribe", "hit the subscribe", "see you in the next video",
+    "see you next time", "subtitles by", "transcription by", "transcribed by",
+    "captions by", "amara.org",
+)
+
+# If a transcript mentions any of these, it's almost certainly a real mockup instruction —
+# never drop it as a hallucination (even if Whisper also stuttered somewhere in the chunk).
+_MOCKUP_INTENT_HINTS = (
+    "app", "screen", "page", "button", "mockup", "flow", "tab", "nav", "navbar",
+    "settings", "login", "signup", "sign up", "home", "profile", "dashboard",
+    "make", "create", "add", "change", "generate", "build", "design", "show",
+    "phone", "iphone", "android", "website", "web", "ui", "color", "colour",
+    "dark mode", "light mode", "truck", "shipping", "map", "list", "card",
+    "want", "need", "like", "put", "move", "go to", "open", "click", "tap",
+    "header", "footer", "menu", "form", "field", "toggle", "slider", "image",
+)
 
 
 def _is_hallucinated(text: str) -> bool:
+    """Return True only for near-certain Whisper silence/filler artifacts.
+
+    Bias: when unsure, keep the transcript. Dropping a real design instruction
+    looks like "nothing generates"; keeping a bye-bye just becomes a model noOp.
+    """
     t = text.lower().strip().rstrip(".!?").strip()
     if not t or len(t) < 3:
         return True
+
+    # Known non-English subtitle watermarks
     if "субтитры" in t or "dimatorzok" in t or "amara.org" in t:
         return True
-    # Chunks composed purely of thank-you/bye filler (possibly repeated) are silence artifacts
-    parts = [p.strip() for p in re.split(r"[.!?,]+", t) if p.strip()]
-    return all(p in _WHISPER_HALLUCINATIONS for p in parts) if parts else True
+
+    # Mostly non-Latin script → Whisper guessed the wrong language on noise
+    letters = [c for c in t if c.isalpha()]
+    if letters:
+        latin = sum(1 for c in letters if ("a" <= c <= "z") or ("A" <= c <= "Z"))
+        if latin / len(letters) < 0.55:
+            return True
+
+    words = t.split()
+
+    # Real design instructions — never drop.
+    if any(h in t for h in _MOCKUP_INTENT_HINTS):
+        return False
+
+    # Short stock sign-offs / greetings on near-silence
+    if len(words) <= 10 and any(p in t for p in _HALLUCINATION_SUBSTRINGS):
+        return True
+
+    # Chunk is ONLY thank-you / bye / hello filler (one or more clauses)
+    parts = [p.strip().rstrip(".!?") for p in re.split(r"[.!?,]+", t) if p.strip()]
+    if parts and all(p in _WHISPER_HALLUCINATIONS for p in parts):
+        return True
+
+    # Dominated by a stutter loop ("wah wah wah", "I love you" × N) with low vocabulary
+    if len(words) >= 12 and _has_stutter_loop(words):
+        unique_ratio = len(set(words)) / max(1, len(words))
+        if unique_ratio < 0.45:
+            return True
+
+    return False
 
 
 def _call_live_patch(previous_spec_json: str, transcript: str, context_text: str = "") -> dict:
@@ -1087,11 +1211,15 @@ async def mockup_endpoint(
 
     audio_bytes = await file.read()
 
-    # Transcribe
+    # Transcribe — force English + temp 0 so silence/noise doesn't become Thai lyrics /
+    # "bye-bye" / song choruses (those were getting filtered and looking like "nothing generates").
     try:
         transcript_resp = client.audio.transcriptions.create(
             model="whisper-1",
             file=("voice.wav", audio_bytes, "audio/wav"),
+            language="en",
+            temperature=0.0,
+            prompt="UI mockup instructions for an app or website: screens, buttons, colors, navigation, tabs, forms.",
         )
         transcript = (transcript_resp.text or "").strip()
         logger.info("[%s] Transcript: %s", request_id, transcript[:200])

@@ -826,9 +826,11 @@ export default function MockupRenderer({ spec, activeScreenId, onScreenChange })
   const [activeTab, setActiveTab] = useState(0);
 
   if (!spec || !Array.isArray(spec.screens) || spec.screens.length === 0) {
+    // Matches FlipCard's default (non-web) frame size — this renders inside a
+    // fixed, overflow:hidden card, so anything bigger than that gets silently clipped.
     return (
       <div style={{
-        width: 375, height: 667, background: LIGHT.secondaryBackground,
+        width: 280, height: 520, background: LIGHT.secondaryBackground,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontFamily: ff, color: LIGHT.systemGray, fontSize: 15,
       }}>
@@ -891,10 +893,10 @@ export default function MockupRenderer({ spec, activeScreenId, onScreenChange })
   const isWeb = ['web', 'website', 'desktop', 'browser'].includes(
     String(spec.platform || spec.formFactor || '').toLowerCase()
   );
-  // Sized to fit the mockup page within one viewport with no scrolling — a real 375×667
-  // phone plus the header/toggle/controls chrome around it doesn't fit most laptop screens.
-  const W = isWeb ? 880 : 320;
-  const H = isWeb ? 560 : 490;
+  // Must match FlipCard's outer card size exactly (280×520 / 880×560) — FlipCard's
+  // frame has overflow:hidden, so any mismatch here silently clips the rendered mockup.
+  const W = isWeb ? 880 : 280;
+  const H = isWeb ? 560 : 520;
 
   const body = (
     <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>

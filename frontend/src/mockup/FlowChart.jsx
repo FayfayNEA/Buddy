@@ -184,6 +184,28 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
           const from = getPos(e.from);
           const to = getPos(e.to);
           if (!positions[e.from] || !positions[e.to]) return null;
+
+          // Self-referencing edge (a button/nav target pointing back at its own screen) —
+          // drawing this as a straight line would cut right through the node, so loop it
+          // below the box instead (there's always headroom there — see the `+ 40` margin
+          // baked into maxY below, whereas the first row sits at y:24 and would clip above).
+          if (e.from === e.to) {
+            const x1 = from.x + NODE_W - 24, y1 = from.y + NODE_H;
+            const x2 = from.x + 24, y2 = from.y + NODE_H;
+            const liftY = from.y + NODE_H + 34;
+            return (
+              <path
+                key={i}
+                d={`M${x1},${y1} C${x1},${liftY} ${x2},${liftY} ${x2},${y2}`}
+                fill="none"
+                stroke={e.kind === 'back' ? '#C7C7CC' : 'var(--purple-border, #9b8afb)'}
+                strokeWidth={2}
+                strokeDasharray={e.kind === 'back' ? '4 4' : 'none'}
+                markerEnd="url(#flow-arrow)"
+              />
+            );
+          }
+
           const x1 = from.x + NODE_W, y1 = from.y + NODE_H / 2;
           const x2 = to.x, y2 = to.y + NODE_H / 2;
           const midX = (x1 + x2) / 2;

@@ -53,7 +53,7 @@ const DEMO_REMAINING_KEY = 'buddy_demo_remaining';
 const DEMO_RESET_VERSION_KEY = 'buddy_demo_reset_version';
 // Bump this whenever demo state should start fresh for everyone (new demo period,
 // limit changed, etc.) — avoids ever needing someone to manually clear localStorage again.
-const DEMO_RESET_VERSION = '2026-07-14-v1';
+const DEMO_RESET_VERSION = '2026-07-15-v1';
 const DEMO_LIMIT = 4;
 
 const SPEAKER_COLORS = ['#7c5cfc', '#0891b2', '#d97706', '#16a34a', '#dc2626', '#9333ea'];
@@ -298,6 +298,8 @@ function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, sta
 export default function App() {
   const [introPhase, setIntroPhase] = useState(0);
   const [vibeMode, setVibeMode] = useState(false);
+  const vibeModeRef = useRef(false);
+  useEffect(() => { vibeModeRef.current = vibeMode; }, [vibeMode]);
   const [participantCount, setParticipantCount] = useState(null);
 
   // Per-speaker state
@@ -328,12 +330,15 @@ export default function App() {
   const sliceTimerRef = useRef(null);
   const pitchSampleIntervalRef = useRef(null);
   const hearingResetRef = useRef(null);
-  // Mockup mode: cut a chunk only after a speech pause, not on a blind timer
-  const lastSpeechAtRef = useRef(0);      // timestamp of most recent above-threshold audio
+  // Mockup mode: cut a chunk only after a REAL speech pause, not on a blind timer
+  const lastSpeechAtRef = useRef(0);       // timestamp of most recent confirmed speech frame
   const speechSinceCutRef = useRef(false); // has the user spoken at all since the last chunk was sent
   const mockupCuttingRef = useRef(false);  // guard against overlapping cuts
   const mockupBusyRef = useRef(false);     // a /mockup request is in flight — keep recording, don't send yet
   const chunkStartedAtRef = useRef(0);     // when the current recording began (safety-cap long monologues)
+  const firstSpeechAtRef = useRef(0);      // when speech first appeared in this chunk
+  const speechMsInChunkRef = useRef(0);    // accumulated ms of confirmed speech in this chunk
+  const loudFramesRef = useRef(0);         // consecutive above-threshold frames (noise debounce)
 
   // Manual speaker claim — null = auto-detect, 0..N-1 = claimed by that panel
   const [activeSpeaker, setActiveSpeaker] = useState(null);
@@ -461,7 +466,7 @@ export default function App() {
         setTimeout(() => {
           setSpeakerStatuses(p => {
             const n = [...p];
-            if (n[speakerIdx] === 'Done') n[speakerIdx] = 'Listening';
+            if (n[speakerIdx] === 'Done') n[speakerIdx] = vibeModeRef.current ? 'Listening' : 'Idle';
             return n;
           });
         }, 2000);
@@ -586,10 +591,11 @@ export default function App() {
     } finally {
       setMockupIsGenerating(false);
       mockupBusyRef.current = false;
-      // Start a fresh 3s listening window after each generation so the next chunk
-      // isn't fired instantly by speech captured mid-generation (prevents rapid-fire gens).
+      // Fresh listening window after each request so mid-generation speech doesn't
+      // instantly fire another cut. cutChunk already reset the speech counters.
       lastSpeechAtRef.current = Date.now();
       chunkStartedAtRef.current = Date.now();
+      loudFramesRef.current = 0;
     }
   };
 
@@ -682,65 +688,92 @@ export default function App() {
       speechSinceCutRef.current = false;
       mockupCuttingRef.current = false;
       chunkStartedAtRef.current = Date.now();
-      const SPEECH_RMS = 0.015;   // above this = someone is talking
-      const MOCKUP_PAUSE_MS = 3000; // silence gap that ends an utterance in mockup mode
-      const MOCKUP_MAX_MS = 20000;  // hard cap so a nonstop monologue still generates
+      firstSpeechAtRef.current = 0;
+      speechMsInChunkRef.current = 0;
+      loudFramesRef.current = 0;
+
+      // Mockup VAD — tuned to NOT cut mid-thought:
+      // - quiet speech still counts (low RMS) so trailing/soft words don't start the pause clock
+      // - need a few consecutive loud frames before counting as speech (ignores coughs/clicks)
+      // - need ~10s of true silence AND a minimum amount of speech in the chunk before cutting
+      const TICK_MS = 150;
+      const SPEECH_RMS = 0.008;
+      const SPEECH_ON_FRAMES = 3;       // ~450ms sustained loudness to confirm speech
+      const MOCKUP_PAUSE_MS = 10000;    // 10s of real silence before we decide you're done
+      const MIN_SPEECH_MS = 2500;       // at least ~2.5s of actual speech in the chunk
+      const MIN_UTTERANCE_MS = 8000;    // don't cut until the thought has had ~8s to develop
+      const MOCKUP_MAX_MS = 45000;      // hard cap for nonstop monologues
+      const MOCKUP_MIN_BLOB = 100000;   // ~1s of WAV — reject near-empty chunks (Whisper hallucinates on those)
 
       pitchSampleIntervalRef.current = setInterval(() => {
         if (!analyserRef.current || !audioCtxRef.current) return;
         const timeData = new Float32Array(analyserRef.current.fftSize);
         analyserRef.current.getFloatTimeDomainData(timeData);
         const rms = Math.sqrt(timeData.reduce((s, v) => s + v * v, 0) / timeData.length);
+        const now = Date.now();
 
         if (rms >= SPEECH_RMS) {
-          lastSpeechAtRef.current = Date.now();
-          speechSinceCutRef.current = true;
-          const pitch = detectDominantPitch(analyserRef.current, audioCtxRef.current.sampleRate);
-          if (pitch) pitchSamplesRef.current.push(pitch);
-          setSpeakerStatuses(p => p.map(s => s === 'Listening' ? 'Hearing' : s));
-          clearTimeout(hearingResetRef.current);
-          hearingResetRef.current = setTimeout(() => {
-            setSpeakerStatuses(p => p.map(s => s === 'Hearing' ? 'Listening' : s));
-          }, 400);
-        } else if (
-          appModeRef.current === 'mockup' &&
-          speechSinceCutRef.current &&
-          !mockupCuttingRef.current &&
-          !mockupBusyRef.current &&
-          Date.now() - lastSpeechAtRef.current >= MOCKUP_PAUSE_MS
-        ) {
-          // 3s pause after speech → the phrase is done, cut and send it.
-          // Skipped while a request is in flight so we keep recording (not lose speech)
-          // and the next chunk builds on the freshly-returned spec.
-          cutChunk();
+          loudFramesRef.current += 1;
+          // Only treat as real speech after sustained loudness — a single click/noise spike
+          // must not arm the pause detector and then fire 10s later on silence.
+          if (loudFramesRef.current >= SPEECH_ON_FRAMES) {
+            lastSpeechAtRef.current = now;
+            speechSinceCutRef.current = true;
+            speechMsInChunkRef.current += TICK_MS;
+            if (!firstSpeechAtRef.current) firstSpeechAtRef.current = now;
+            const pitch = detectDominantPitch(analyserRef.current, audioCtxRef.current.sampleRate);
+            if (pitch) pitchSamplesRef.current.push(pitch);
+            setSpeakerStatuses(p => p.map(s => s === 'Listening' ? 'Hearing' : s));
+            clearTimeout(hearingResetRef.current);
+            hearingResetRef.current = setTimeout(() => {
+              setSpeakerStatuses(p => p.map(s => s === 'Hearing' ? 'Listening' : s));
+            }, 400);
+          }
+        } else {
+          loudFramesRef.current = 0;
         }
 
-        // Safety cap: someone talking nonstop past the max window → cut anyway (only when free)
-        if (
-          appModeRef.current === 'mockup' &&
-          speechSinceCutRef.current &&
-          !mockupCuttingRef.current &&
-          !mockupBusyRef.current &&
-          Date.now() - chunkStartedAtRef.current >= MOCKUP_MAX_MS
-        ) {
+        if (appModeRef.current !== 'mockup') return;
+        if (!speechSinceCutRef.current || mockupCuttingRef.current || mockupBusyRef.current) return;
+        if (!firstSpeechAtRef.current || !lastSpeechAtRef.current) return;
+
+        const silentFor = now - lastSpeechAtRef.current;
+        const utteranceAge = now - firstSpeechAtRef.current;
+        const hasEnoughSpeech = speechMsInChunkRef.current >= MIN_SPEECH_MS;
+        const thoughtHadTime = utteranceAge >= MIN_UTTERANCE_MS;
+        const longPause = silentFor >= MOCKUP_PAUSE_MS;
+        const hitCap = now - chunkStartedAtRef.current >= MOCKUP_MAX_MS;
+
+        // Only cut after a long REAL pause once the utterance is substantial —
+        // brief mid-sentence hesitations must not trigger generation.
+        if ((longPause && hasEnoughSpeech && thoughtHadTime) || (hitCap && hasEnoughSpeech)) {
           cutChunk();
         }
-      }, 150);
+      }, TICK_MS);
 
       // Cut the current recording, route the blob, and start a fresh recorder on the same stream.
+      const resetChunkCounters = () => {
+        speechSinceCutRef.current = false;
+        firstSpeechAtRef.current = 0;
+        speechMsInChunkRef.current = 0;
+        loudFramesRef.current = 0;
+        lastSpeechAtRef.current = 0;
+        chunkStartedAtRef.current = Date.now();
+      };
+
       const cutChunk = () => {
         if (!recorderRef.current || !streamRef.current?.active) return;
         if (appModeRef.current === 'mockup') {
           if (mockupCuttingRef.current) return;
           mockupCuttingRef.current = true;
         }
-        speechSinceCutRef.current = false;
         const finishedRecorder = recorderRef.current;
         finishedRecorder.stopRecording(() => {
           const blob = finishedRecorder.getBlob();
 
           if (appModeRef.current === 'mockup') {
-            if (blob.size > 5000 && sendMockupAudioRef.current) {
+            // Near-empty / noise-only blobs make Whisper invent "bye bye" / lyrics — skip them.
+            if (blob.size > MOCKUP_MIN_BLOB && sendMockupAudioRef.current) {
               sendMockupAudioRef.current(blob);
             }
           } else {
@@ -767,17 +800,18 @@ export default function App() {
               recorderType: RecordRTC.StereoAudioRecorder, numberOfAudioChannels: 1,
             });
             recorderRef.current.startRecording();
-            chunkStartedAtRef.current = Date.now();
           }
+          resetChunkCounters();
           mockupCuttingRef.current = false;
         });
       };
 
-      // Image/Video: keep the steady 5s slice timer. Mockup is driven by the pause detector above.
+      // Image mode: longer slices so a full spoken prompt isn't chopped every 5s.
+      // Mockup ignores this timer and uses the pause detector above.
       sliceTimerRef.current = setInterval(() => {
         if (appModeRef.current === 'mockup') return;
         cutChunk();
-      }, 5000);
+      }, 10000);
 
       setSpeakerStatuses(new Array(participantCountRef.current).fill('Listening'));
 
@@ -886,7 +920,7 @@ export default function App() {
       setSpeakerGenerating([false]);
       setSpeakerStatuses(['Done']);
       setTimeout(() => {
-        setSpeakerStatuses(p => p.map(s => s === 'Done' ? (vibeMode ? 'Listening' : 'Idle') : s));
+        setSpeakerStatuses(p => p.map(s => s === 'Done' ? (vibeModeRef.current ? 'Listening' : 'Idle') : s));
       }, 2000);
     }
   };
@@ -997,45 +1031,7 @@ export default function App() {
             <RotateCcw size={22} strokeWidth={2} />
           </button>
 
-          {/* Buddy status badge — bottom-left, same for Image, Mockup, and Video modes. Drag it, then it springs back home. */}
-          <motion.div
-            drag
-            dragMomentum={false}
-            dragElastic={0.15}
-            dragSnapToOrigin
-            style={{ position: 'fixed', bottom: '4%', left: '4%', zIndex: 50 }}
-            className="status-badge-wrapper"
-          >
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={statusImageSrc}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.25 }}
-                className="status-badge-inner"
-              >
-                <img
-                  src={statusImageSrc}
-                  alt={`Status: ${displayStatus}`}
-                  style={{ height: '80px', width: 'auto', pointerEvents: 'none' }}
-                  className="status-badge-label"
-                  draggable={false}
-                />
-                <span className="status-text" style={{ color: STATUS_COLORS[displayStatus] ?? STATUS_COLORS.default }}>
-                  {displayStatus}
-                </span>
-              </motion.div>
-            </AnimatePresence>
-          </motion.div>
-
           <div className={`app-inner${participantCount > 2 && !mergeMode ? ' app-inner--wide' : ''}`}>
-            <header className="header header--fixed">
-              <button type="button" onClick={() => setIntroPhase(0)} className="header-logo-btn" aria-label="Replay intro">
-                <img src="/images/buddyname.svg" alt="Buddy" className="header-logo-img" />
-              </button>
-            </header>
-
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }}
               transition={{ delay: 0.25, duration: 0.5, ease: 'easeOut' }}
@@ -1059,6 +1055,7 @@ export default function App() {
                 </button>
               </div>
 
+              <div className="mode-content-slot">
               {/* ── Image mode panels — say "make a video of..." and it auto-produces video ── */}
               {appMode === 'image' && (
                 <>
@@ -1244,21 +1241,54 @@ export default function App() {
                 </div>
                 </MockupErrorBoundary>
               )}
-
-              {/* Controls */}
-              <div className={`controls${hasAnyHistory ? ' controls-caption' : ''}`}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-                  <LiquidButton active={vibeMode} onClick={toggleVibe} demoComplete={demoUsesLeft === 0} />
-                  <div style={{ fontSize: '13px', opacity: 0.55, fontFamily: 'inherit', letterSpacing: '0.04em', textAlign: 'center', lineHeight: '1.6' }}>
-                    {demoUsesLeft === 0
-                      ? <span>want more? <a href={`mailto:${CONTACT_EMAIL}`} style={{ textDecoration: 'underline' }}>{CONTACT_EMAIL}</a></span>
-                      : totalUsed > 0
-                        ? `${demoUsesLeft} of ${DEMO_LIMIT} generations left`
-                        : null}
-                  </div>
-                </div>
               </div>
             </motion.div>
+          </div>
+
+          {/* Bottom bar — Idle badge and Start Vibing share the same horizontal row */}
+          <div className="app-bottom-bar">
+            <motion.div
+              drag
+              dragMomentum={false}
+              dragElastic={0.15}
+              dragSnapToOrigin
+              className="status-badge-wrapper"
+            >
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={statusImageSrc}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="status-badge-inner"
+                >
+                  <img
+                    src={statusImageSrc}
+                    alt={`Status: ${displayStatus}`}
+                    style={{ pointerEvents: 'none' }}
+                    className="status-badge-label"
+                    draggable={false}
+                  />
+                  <span className="status-text" style={{ color: STATUS_COLORS[displayStatus] ?? STATUS_COLORS.default }}>
+                    {displayStatus}
+                  </span>
+                </motion.div>
+              </AnimatePresence>
+            </motion.div>
+
+            <div className={`controls${hasAnyHistory ? ' controls-caption' : ''}`}>
+              <div className="controls-inner">
+                <LiquidButton active={vibeMode} onClick={toggleVibe} demoComplete={demoUsesLeft === 0} />
+                <div className="controls-meta">
+                  {demoUsesLeft === 0
+                    ? <span>want more? <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></span>
+                    : totalUsed > 0
+                      ? `${demoUsesLeft} of ${DEMO_LIMIT} generations left`
+                      : null}
+                </div>
+              </div>
+            </div>
           </div>
         </>
       )}
