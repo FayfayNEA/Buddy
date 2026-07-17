@@ -804,7 +804,23 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  margin-top: 0;
+}
+
+/* Contact + generation tags share one horizontal line */
+.controls-tags-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  max-width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
   margin-top: 2px;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 0 4.5%;
 }
 
 .demo-tag {
@@ -942,12 +958,13 @@ body {
   transition: transform 0.25s ease;
 }
 
-/* Contact — circular mail button, fixed bottom-left */
+/* Contact — circular mail button, left-aligned on the 1–5 generation row */
 .contact-btn {
-  position: fixed;
-  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  position: absolute;
   left: 4.5%;
-  z-index: 55;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -966,15 +983,33 @@ body {
 
 .contact-btn:hover {
   background-color: var(--purple-light);
-  transform: translateY(-1px);
+  transform: translateY(calc(-50% - 1px));
 }
 
 .contact-btn:active {
-  transform: translateY(0) scale(0.97);
+  transform: translateY(-50%) scale(0.97);
 }
 
 .contact-btn svg {
   display: block;
+}
+
+/* Mind-picker screen — no generation row yet, park bottom-left */
+.contact-btn--floating {
+  position: fixed;
+  left: 4.5%;
+  top: auto;
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  transform: none;
+  z-index: 55;
+}
+
+.contact-btn--floating:hover {
+  transform: translateY(-1px);
+}
+
+.contact-btn--floating:active {
+  transform: translateY(0) scale(0.97);
 }
 
 /* Dial — turn to browse forward/back */
@@ -3221,7 +3256,6 @@ body {
 
   .contact-btn {
     left: 16px;
-    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
     width: 36px;
     height: 36px;
   }
@@ -3229,6 +3263,15 @@ body {
   .contact-btn svg {
     width: 17px;
     height: 17px;
+  }
+
+  .contact-btn--floating {
+    left: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .controls-tags-row {
+    padding: 0 16px;
   }
 
   .app-bottom-bar {

@@ -1729,11 +1729,11 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Contact — always available once past the intro */}
-      {introPhase === 2 && createPortal(
+      {/* Contact on the mind-picker screen (main session puts it beside 1–5) */}
+      {introPhase === 2 && participantCount === null && createPortal(
         <a
           href={`mailto:${CONTACT_EMAIL}`}
-          className="contact-btn"
+          className="contact-btn contact-btn--floating"
           aria-label={`Contact ${CONTACT_EMAIL}`}
           title={CONTACT_EMAIL}
         >
@@ -2212,19 +2212,29 @@ export default function App() {
             <div className={`controls${hasAnyHistory ? ' controls-caption' : ''}`}>
               <div className="controls-inner">
                 <LiquidButton active={vibeMode} onClick={toggleVibe} demoComplete={demoUsesLeft === 0} />
-                <div className="demo-tags" aria-label={`${demoUsesLeft} of ${DEMO_LIMIT} generations left`}>
-                  {Array.from({ length: DEMO_LIMIT }).map((_, i) => {
-                    const used = i < totalUsed;
-                    return (
-                      <span
-                        key={i}
-                        className={`demo-tag${used ? ' demo-tag--used' : ''}`}
-                        title={used ? `Generation ${i + 1} used` : `Generation ${i + 1} available`}
-                      >
-                        {i + 1}
-                      </span>
-                    );
-                  })}
+                <div className="controls-tags-row">
+                  <a
+                    href={`mailto:${CONTACT_EMAIL}`}
+                    className="contact-btn"
+                    aria-label={`Contact ${CONTACT_EMAIL}`}
+                    title={CONTACT_EMAIL}
+                  >
+                    <Mail size={19} strokeWidth={2} />
+                  </a>
+                  <div className="demo-tags" aria-label={`${demoUsesLeft} of ${DEMO_LIMIT} generations left`}>
+                    {Array.from({ length: DEMO_LIMIT }).map((_, i) => {
+                      const used = i < totalUsed;
+                      return (
+                        <span
+                          key={i}
+                          className={`demo-tag${used ? ' demo-tag--used' : ''}`}
+                          title={used ? `Generation ${i + 1} used` : `Generation ${i + 1} available`}
+                        >
+                          {i + 1}
+                        </span>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div className="controls-meta">
                   {micError
