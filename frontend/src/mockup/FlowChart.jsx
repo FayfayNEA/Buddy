@@ -75,18 +75,42 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
   const containerRef = useRef(null);
   const dragRef = useRef(null); // {type:'move'|'rewire', screenId, dx, dy}
 
-  const screens = spec?.screens || [];
+  const screens = (spec?.screens || []).map((s, i) => ({
+    ...s,
+    id: s?.id || `screen_${i + 1}`,
+    name: s?.name || s?.id || `Screen ${i + 1}`,
+  }));
   const edges = collectEdges(screens);
 
   // Auto-place any screen that doesn't have a position yet (new from voice, or first render).
-  // Never overwrites a position the user already dragged.
+  // Never overwrites a position the user already dragged. Account for existing nodes so a
+  // newly added screen (e.g. Search) doesn't land stacked under another node.
   useEffect(() => {
     const rank = rankScreens(screens, edges);
-    const rankCounts = {};
     setPositions(prev => {
-      let changed = false;
       const next = { ...prev };
+      let changed = false;
+
+      // Drop positions for screens that no longer exist
+      const liveIds = new Set(screens.map(s => s.id).filter(Boolean));
+      for (const id of Object.keys(next)) {
+        if (!liveIds.has(id)) {
+          delete next[id];
+          changed = true;
+        }
+      }
+
+      // Count how many nodes already occupy each rank column
+      const rankCounts = {};
       for (const s of screens) {
+        const p = next[s.id];
+        if (!p) continue;
+        const r = Math.max(0, Math.round((p.x - 24) / RANK_GAP));
+        rankCounts[r] = (rankCounts[r] || 0) + 1;
+      }
+
+      for (const s of screens) {
+        if (!s?.id) continue;
         if (next[s.id]) continue;
         const r = rank[s.id] || 0;
         const yi = rankCounts[r] || 0;
@@ -97,7 +121,7 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
       return changed ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screens.map(s => s.id).join(',')]);
+  }, [screens.map(s => s.id).join('|')]);
 
   const getPos = (id) => positions[id] || { x: 24, y: 24 };
 

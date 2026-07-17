@@ -11,6 +11,8 @@ export default function FlipCard({
   transcript,
   changeLog,
   iterationNumber,
+  /** Full mind stack — when present, download packs every iteration into one zip */
+  iterations = null,
   compact = false,
   flipped: controlledFlipped,
   onToggleFlip,
@@ -29,24 +31,43 @@ export default function FlipCard({
     setDownloading(true);
     try {
       const formData = new FormData();
-      // front.props.spec is MockupRenderer's spec prop — access via iteration data from parent
-      formData.append('spec_json', JSON.stringify(front?.props?.spec || {}));
-      formData.append('transcript', transcript || '');
-      formData.append('iteration_number', String(iterationNumber));
+      const stack = Array.isArray(iterations) && iterations.length > 0
+        ? iterations
+        : null;
+
+      if (stack) {
+        formData.append('iterations_json', JSON.stringify(stack.map((it, i) => ({
+          iterationNumber: it.iterationNumber ?? i + 1,
+          spec: it.spec || {},
+          transcript: it.transcript || '',
+          changeLog: it.changeLog || it.spec?.changeLog || [],
+        }))));
+      } else {
+        // front.props.spec is MockupRenderer's spec prop — single-iteration fallback
+        formData.append('spec_json', JSON.stringify(front?.props?.spec || {}));
+        formData.append('transcript', transcript || '');
+        formData.append('iteration_number', String(iterationNumber));
+      }
+
       const res = await axios.post(`${API_BASE}/mockup-export`, formData, {
         responseType: 'blob', timeout: 120000,
       });
       const url = URL.createObjectURL(res.data);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `iteration-${String(iterationNumber).padStart(2, '0')}.zip`;
+      const cd = res.headers?.['content-disposition'] || '';
+      const m = cd.match(/filename="?([^";]+)"?/i);
+      a.download = m?.[1]?.trim()
+        || (stack && stack.length > 1
+          ? `buddy-mockup-${stack.length}-iterations.zip`
+          : `iteration-${String(iterationNumber).padStart(2, '0')}.zip`);
       a.rel = 'noopener';
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error('Export failed', e);
+    } catch (err) {
+      console.error('Export failed', err);
     } finally {
       setDownloading(false);
     }
@@ -67,12 +88,17 @@ export default function FlipCard({
     : compact
       ? undefined
       : {
-          // iPhone 17 logical viewport: 402×874. Cap display width so the device
-          // silhouette stays phone-thin (not a near-full-bleed thick card).
-          width: 'min(402px, 78vw, calc((100dvh - 230px) * 402 / 874))',
+          // iPhone 17 logical viewport: 402×874. Cap so the full phone fits
+          // above Start Vibing without forcing page scroll.
+          width: 'min(402px, 78vw, calc((100dvh - var(--single-mockup-chrome, 290px)) * 402 / 874))',
+          maxHeight: 'calc(100dvh - var(--single-mockup-chrome, 290px))',
           height: 'auto',
           aspectRatio: '402 / 874',
         };
+
+  const exportLabel = Array.isArray(iterations) && iterations.length > 1
+    ? `Download all ${iterations.length} iterations`
+    : 'Download this iteration';
 
   return (
     <div className={`flip-card-shell${isWeb ? ' flip-card-shell--web' : ''}${compact ? ' flip-card-shell--compact' : ''}`}>
@@ -92,6 +118,8 @@ export default function FlipCard({
                   className={`flip-card-export-btn${downloading ? ' flip-card-export-btn--loading' : ''}`}
                   onClick={handleDownload}
                   disabled={downloading}
+                  title={exportLabel}
+                  aria-label={exportLabel}
                 >
                   {downloading ? '…' : '↓'}
                 </button>

@@ -76,6 +76,8 @@
   --header-offset-top: 24px;
   --header-control-size: 46px;
   --app-padding: 24px;
+  /* Header + mode toggle + Start Vibing bar + transcript toggle + padding */
+  --single-mockup-chrome: 290px;
 
   /* Multi-mind purple cards — Image defines size; Mockup mirrors it exactly */
   --mind-card-max-height: min(35vh, 350px);
@@ -182,7 +184,8 @@ body {
   min-height: 0;
   max-height: 100%;
   overflow-x: hidden;
-  overflow-y: auto;
+  /* Locked by default — only unlock after content exists (see .app--scrollable) */
+  overflow-y: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
@@ -194,9 +197,66 @@ body {
   scrollbar-color: rgba(140, 120, 190, 0.45) transparent;
 }
 
-/* Multi-mind: keep the shell fixed, but let the inner scroller handle tall 2-row grids */
-.app--scrollable .app-scroll {
+/* Multi-mind: keep the shell fixed; cards scale to fit — no page scroll */
+.app--scrollable:not(.app--crowded-image) .app-scroll {
   overflow-y: auto;
+}
+
+.app--crowded-image .app-scroll {
+  overflow: hidden !important;
+  padding-bottom: 0;
+}
+
+/* Empty single-mind (nothing generated yet): fill the viewport, never scroll */
+.app:not(.app--scrollable):not(.app--crowded-image) .app-scroll {
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.app:not(.app--scrollable) .app-inner,
+.app:not(.app--scrollable) .app-main,
+.app:not(.app--scrollable) .mode-content-slot {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+  align-items: center;
+}
+
+.app:not(.app--scrollable) .app-main {
+  padding-bottom: 0;
+  justify-content: center;
+}
+
+.app:not(.app--scrollable) .mode-content-slot {
+  justify-content: center;
+  min-height: 0;
+}
+
+.app:not(.app--scrollable) .mode-content-slot .panels-row--1,
+.app:not(.app--scrollable) .mode-content-slot .speaker-panel {
+  max-height: 100%;
+  min-height: 0;
+}
+
+.app:not(.app--scrollable) .stage {
+  max-height: min(62vh, 100%);
+}
+
+.app:not(.app--scrollable).app--mockup .mockup-with-flow {
+  max-height: 100%;
+  min-height: 0;
+  align-self: stretch;
+}
+
+.app:not(.app--scrollable).app--mockup .mockup-frame:not(.mockup-frame--split),
+.app:not(.app--scrollable).app--mockup .flip-card-shell:not(.flip-card-shell--compact) .flip-card {
+  width: min(402px, 70vw, calc((100dvh - var(--single-mockup-chrome)) * 402 / 874));
+  max-height: min(calc(100dvh - var(--single-mockup-chrome)), 100%);
 }
 
 .app--scrollable .app-inner,
@@ -212,6 +272,18 @@ body {
   box-sizing: border-box;
 }
 
+/* Single-mind mockup: fill the scroll slot so one screen fits without page scroll */
+.app--scrollable.app--mockup:not(.app--multi-mockup) .mode-content-slot .mockup-with-flow {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+.app--scrollable.app--mockup:not(.app--multi-mockup) .mode-content-slot {
+  align-items: stretch;
+}
+
 .app--scrollable .app-main {
   padding-bottom: 0;
 }
@@ -219,6 +291,33 @@ body {
 .app--scrollable .mode-toggle-row--chrome,
 .app--scrollable.app--mockup .mode-toggle-row--chrome {
   margin-bottom: 10px;
+}
+
+/* Crowded 2–6 minds: tighten chrome so 2×2 (four people) fits one viewport */
+.app--crowded-image .mode-toggle-row--chrome,
+.app--crowded-image.app--mockup .mode-toggle-row--chrome {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.app--crowded-image .app-bottom-bar {
+  min-height: 64px;
+  padding: 6px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+}
+
+.app--crowded-image .app-main {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.app--crowded-image .liquid-btn {
+  height: 44px;
+  width: min(420px, 48vw);
+}
+
+.app--crowded-image .controls-meta {
+  margin-top: 4px;
+  font-size: 12px;
 }
 
 /* Minimal scrollbar — transparent track, soft thumb only */
@@ -1378,6 +1477,37 @@ body {
   flex-wrap: unset;
 }
 
+/* Crowded: fill the viewport slot; rows share height evenly (4 minds = 2×2, no scroll) */
+.app--crowded-image .panels-row--2,
+.app--crowded-image .panels-row--3,
+.app--crowded-image .panels-row--4,
+.app--crowded-image .panels-row--5,
+.app--crowded-image .panels-row--6 {
+  flex: 1 1 auto;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  align-content: stretch;
+  row-gap: 12px;
+  column-gap: 14px;
+}
+
+.app--crowded-image .panels-row--2 {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.app--crowded-image .panels-row--3,
+.app--crowded-image .panels-row--4 {
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.app--crowded-image .panels-row--5,
+.app--crowded-image .panels-row--6 {
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  row-gap: 10px;
+  column-gap: 12px;
+}
+
 /* 3 minds: center the leftover mind under the top row */
 .panels-row--3 .speaker-panel:nth-child(3) {
   grid-column: 1 / -1;
@@ -1398,6 +1528,18 @@ body {
   align-items: center;
   justify-content: flex-start;
   gap: 6px;
+}
+
+/* Crowded: each mind fills its grid cell; stage grows into leftover height */
+.app--crowded-image .panels-row--2 .speaker-panel,
+.app--crowded-image .panels-row--3 .speaker-panel,
+.app--crowded-image .panels-row--4 .speaker-panel,
+.app--crowded-image .panels-row--5 .speaker-panel,
+.app--crowded-image .panels-row--6 .speaker-panel {
+  height: 100%;
+  min-height: 0;
+  align-self: stretch;
+  gap: 4px;
 }
 
 .panels-row--2 .speaker-panel .speaker-label,
@@ -1630,6 +1772,18 @@ body {
   overflow: hidden;
   box-shadow: var(--shadow);
   box-sizing: border-box;
+}
+
+/* Crowded: drop fixed card height — fill the cell under the mind label */
+.app--crowded-image .panels-row--2 .speaker-panel .stage,
+.app--crowded-image .panels-row--3 .speaker-panel .stage,
+.app--crowded-image .panels-row--4 .speaker-panel .stage,
+.app--crowded-image .panels-row--5 .speaker-panel .stage,
+.app--crowded-image .panels-row--6 .speaker-panel .stage {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  max-height: none;
 }
 
 /* 5–6 image panels */
@@ -2021,6 +2175,33 @@ body {
   gap: 56px;
   width: 100%;
   flex-wrap: wrap;
+  /* Keep single-mind flow + preview inside the viewport — no page scroll */
+  max-height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+/* One screen: hug the available height so the phone/browser fits without scroll */
+.mockup-with-flow--single-screen {
+  align-items: stretch;
+}
+
+.mockup-with-flow--single-screen .flowchart-panel {
+  max-height: none;
+  height: auto;
+  align-self: stretch;
+}
+
+.mockup-with-flow--single-screen:not(.mockup-with-flow--web) .mockup-mode-wrap,
+.mockup-with-flow--single-screen:not(.mockup-with-flow--web) .mockup-deck,
+.mockup-with-flow--single-screen:not(.mockup-with-flow--web) .flip-card-shell {
+  max-height: 100%;
+  min-height: 0;
+}
+
+.mockup-with-flow--single-screen:not(.mockup-with-flow--web) .flip-card {
+  width: min(402px, 78vw, calc((100dvh - var(--single-mockup-chrome)) * 402 / 874));
+  max-height: calc(100dvh - var(--single-mockup-chrome));
 }
 
 /* Multi-mind mockup: one image-style grid; each card toggles mockup ⇄ user flow */
@@ -2414,6 +2595,27 @@ body {
   margin-bottom: auto;
 }
 
+/* Crowded: wrappers + grid fill the scroll slot (no page scroll for 2–6 minds) */
+.app--crowded-image .mode-content-slot {
+  align-items: stretch;
+}
+
+.app--crowded-image .mode-content-slot > * {
+  flex: 0 0 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+.app--crowded-image .mode-content-slot > [class*="panels-row"] {
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  max-height: 100%;
+  min-height: 0;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  display: grid;
+}
+
 @media (max-width: 900px) {
   .mockup-cells-row--2,
   .mockup-cells-row--3,
@@ -2450,20 +2652,22 @@ body {
     flex: none;
   }
 
-  .app--scrollable .app-scroll {
+  .app--scrollable:not(.app--crowded-image) .app-scroll {
     overflow-y: auto;
   }
 }
 
-/* Short viewports: allow scroll rather than crushing cards to zero */
+/* Short viewports: allow scroll rather than crushing cards to zero —
+   except crowded multi-mind, which always scales to fit. */
 @media (max-height: 640px) {
-  .app--scrollable .app-scroll {
+  .app--scrollable:not(.app--crowded-image) .app-scroll {
     overflow-y: auto;
   }
 }
 
 /* Equal split inset to the same left/right edges as the commit + reset buttons
-   (those sit at left/right: 4.5%). */
+   (those sit at left/right: 4.5%). Fill the scroll slot so one-screen web
+   never forces page scroll to see the full mockup. */
 .mockup-with-flow--web {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2475,9 +2679,15 @@ body {
   margin-left: calc(4.5vw - var(--app-padding));
   margin-right: 0;
   padding-right: 0;
-  height: calc(100dvh - 220px);
-  min-height: 360px;
+  height: min(100%, calc(100dvh - var(--single-mockup-chrome)));
+  max-height: 100%;
+  min-height: 0;
   box-sizing: border-box;
+}
+
+.app--scrollable.app--mockup:not(.app--multi-mockup) .mockup-with-flow--web {
+  flex: 1 1 auto;
+  height: 100%;
 }
 
 .mockup-with-flow--web .flowchart-panel {
@@ -2605,7 +2815,8 @@ body {
 
 /* Empty/loading/oops — phone silhouette for single-mind only */
 .mockup-frame:not(.mockup-frame--split) {
-  width: min(402px, 78vw, calc((100dvh - 230px) * 402 / 874));
+  width: min(402px, 78vw, calc((100dvh - var(--single-mockup-chrome)) * 402 / 874));
+  max-height: calc(100dvh - var(--single-mockup-chrome));
   height: auto;
   aspect-ratio: 402 / 874;
   border-radius: 8px;
@@ -2776,7 +2987,8 @@ body {
 }
 
 .flip-card {
-  width: min(402px, 78vw, calc((100dvh - 230px) * 402 / 874));
+  width: min(402px, 78vw, calc((100dvh - var(--single-mockup-chrome)) * 402 / 874));
+  max-height: calc(100dvh - var(--single-mockup-chrome));
   height: auto;
   aspect-ratio: 402 / 874;
   perspective: 1200px;
@@ -3020,7 +3232,8 @@ body {
 
   .mockup-frame:not(.mockup-frame--split),
   .flip-card-shell:not(.flip-card-shell--compact) .flip-card {
-    width: min(360px, 72vw, calc((100dvh - 210px) * 402 / 874));
+    width: min(360px, 72vw, calc((100dvh - var(--single-mockup-chrome)) * 402 / 874));
+    max-height: calc(100dvh - var(--single-mockup-chrome));
   }
 
   .stage {
@@ -3058,7 +3271,7 @@ body {
     margin-bottom: 0;
   }
 
-  .app--scrollable .app-scroll {
+  .app--scrollable:not(.app--crowded-image) .app-scroll {
     overflow-y: auto;
   }
 
@@ -3172,6 +3385,19 @@ body {
   flex-shrink: 0 !important;
   align-self: stretch !important;
   box-sizing: border-box !important;
+}
+
+/* Crowded override: flexible height wins over the fixed lock above */
+.app--crowded-image .panels-row--2 .speaker-panel > .stage,
+.app--crowded-image .panels-row--3 .speaker-panel > .stage,
+.app--crowded-image .panels-row--4 .speaker-panel > .stage,
+.app--crowded-image .panels-row--5 .speaker-panel > .stage,
+.app--crowded-image .panels-row--6 .speaker-panel > .stage {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  flex: 1 1 auto !important;
+  flex-shrink: 1 !important;
 }
 
 /* Compact shells must stretch full cell width (never phone letterbox) */

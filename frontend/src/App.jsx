@@ -1508,20 +1508,21 @@ export default function App() {
     }
   };
 
-  // ── Export session (images ZIP, or focused mind's mockup iteration) ────────
+  // ── Export session (images ZIP, or ALL iterations for the focused mockup mind) ────────
   const commitSession = async () => {
-    // Mockup mode: export the focused mind's currently viewed iteration
+    // Mockup mode: export every iteration in the focused mind's stack
     if (appMode === 'mockup') {
       const mind = Math.max(0, Math.min(activeMockupMind, (mockupStacks.length || 1) - 1));
-      const stack = mockupStacks[mind] || [];
-      const curIdx = mockupCurrentIdxs[mind] ?? stack.length - 1;
-      const iter = stack[curIdx] || stack[stack.length - 1];
-      if (!iter?.spec) return;
+      const stack = (mockupStacks[mind] || []).filter(it => it?.spec);
+      if (stack.length === 0) return;
       try {
         const formData = new FormData();
-        formData.append('spec_json', JSON.stringify(iter.spec));
-        formData.append('transcript', iter.transcript || '');
-        formData.append('iteration_number', String(iter.iterationNumber || curIdx + 1));
+        formData.append('iterations_json', JSON.stringify(stack.map((it, i) => ({
+          iterationNumber: it.iterationNumber ?? i + 1,
+          spec: it.spec,
+          transcript: it.transcript || '',
+          changeLog: it.changeLog || it.spec?.changeLog || [],
+        }))));
         const response = await axios.post(`${API_BASE}/mockup-export`, formData, {
           responseType: 'blob', timeout: 120000,
         });
@@ -1529,7 +1530,9 @@ export default function App() {
         const cd = response.headers['content-disposition'] || '';
         const m = cd.match(/filename="?([^";]+)"?/i);
         const filename = m?.[1]?.trim()
-          || `mind-${mind + 1}-iteration-${String(iter.iterationNumber || curIdx + 1).padStart(2, '0')}.zip`;
+          || (stack.length > 1
+            ? `mind-${mind + 1}-buddy-mockup-${stack.length}-iterations.zip`
+            : `mind-${mind + 1}-iteration-${String(stack[0].iterationNumber || 1).padStart(2, '0')}.zip`);
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = filename; a.rel = 'noopener';
@@ -1634,12 +1637,13 @@ export default function App() {
     const measure = () => {
       const root = contentEdgeRef.current;
       if (!root) return;
-      // Prefer the actual visual boxes (first mind panel, flowchart, or phone card)
+      // Single-mind: align Buddy to the user-flow panel's left edge.
+      // Multi-mind / image: fall back to the first mind panel.
       const target =
-        root.querySelector('.mockup-mind-block') ||
-        root.querySelector('.mockup-with-flow') ||
-        root.querySelector('.speaker-panel') ||
         root.querySelector('.flowchart-panel') ||
+        root.querySelector('.mockup-mind-block') ||
+        root.querySelector('.speaker-panel') ||
+        root.querySelector('.mockup-with-flow') ||
         root.querySelector('.mockup-mode-wrap') ||
         root.querySelector('.flip-card') ||
         root.querySelector('.mockup-frame') ||
@@ -1656,7 +1660,10 @@ export default function App() {
     const t4 = setTimeout(measure, 1100);
 
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
-    if (ro && contentEdgeRef.current) ro.observe(contentEdgeRef.current);
+    const root = contentEdgeRef.current;
+    const flowPanel = root?.querySelector('.flowchart-panel');
+    if (ro && root) ro.observe(root);
+    if (ro && flowPanel) ro.observe(flowPanel);
     window.addEventListener('resize', measure);
     return () => {
       cancelAnimationFrame(t1);
@@ -1998,6 +2005,7 @@ export default function App() {
                                           return n;
                                         })}
                                         hideToggle
+                                        iterations={stack}
                                         front={
                                           <MockupRenderer
                                             spec={currentIter.spec}
@@ -2094,8 +2102,10 @@ export default function App() {
                     );
                     const isOnLatest = stack.length > 0 && curIdx === stack.length - 1;
                     const screenId = mockupActiveScreenIds[0] || latestSpec?.screens?.[0]?.id || null;
+                    const screenCount = latestSpec?.screens?.length || currentSpec?.screens?.length || 0;
+                    const singleScreen = screenCount <= 1;
                     return (
-                      <div className={`mockup-with-flow${isWeb ? ' mockup-with-flow--web' : ''}`}>
+                      <div className={`mockup-with-flow${isWeb ? ' mockup-with-flow--web' : ''}${singleScreen ? ' mockup-with-flow--single-screen' : ''}`}>
                         <div className="flowchart-panel">
                           <FlowChart
                             spec={latestSpec}
@@ -2139,10 +2149,11 @@ export default function App() {
                               <>
                                 <FlipCard
                                   key="mockup-m0"
+                                  iterations={stack}
                                   front={
                                     <MockupRenderer
                                       spec={currentIter.spec}
-                                      scaleToFit={isWeb}
+                                      scaleToFit
                                       activeScreenId={isOnLatest ? screenId : undefined}
                                       onScreenChange={isOnLatest
                                         ? (id) => setMindMockupActiveScreenId(0, id)

@@ -985,8 +985,8 @@ CORE RULES:
 
 5e. WIRE SCREENS INTO A REAL FLOW. This app has a separate "user flow" chart that draws an arrow for every navigable link between screens, so every screen you add should connect to the flow, not float disconnected:
    - The primary action on a screen (the main Button, or a ListRow that opens a detail view) should carry props.target set to the id of the screen it leads to. Example: a login screen's "Log In" Button gets {label:"Log In", target:"screen_home"}; a Settings list row "Account" gets {label:"Account", target:"screen_account"}.
-   - When you create a new screen because of something a user tapped/said leads there ("then it goes to a profile screen", "tapping a song opens the player"), ALSO set target on the originating element in the SOURCE screen so the two screens are linked. Do this even if the user only described the destination, not the exact button — attach it to the most obviously relevant existing Button/ListRow.
-   - TabBar tabs and NavBar back-links already connect screens via their own target fields — keep using those as before.
+   - When you create a new screen because of something a user tapped/said leads there ("then it goes to a profile screen", "tapping a song opens the player", "add a search page"), you MUST (1) append a full new object to spec.screens with its own id/name/components, AND (2) set target on the originating element in the SOURCE screen (Button, ListRow, TabBar tab, or NavBar link) so the two screens are linked. Adding a SearchBar onto the current screen is NOT the same as adding a search page — a new page needs a new entry in spec.screens.
+   - TabBar tabs and NavBar back-links already connect screens via their own target fields — keep using those as before. Every TabBar tab MUST have a target pointing at a real screen id that exists in spec.screens.
    - Every screen should be reachable from somewhere; a screen with zero incoming links is a mistake unless it's explicitly the app's entry screen.
 
 5f. DRILL-DOWN SCREENS MUST HAVE A WAY BACK — TAB-BAR SCREENS DO NOT. If a screen is reached by tapping into something (a list row, a button, a "view details" action) rather than by a TabBar tab, it MUST include a NavBar with props.leading = {"type":"back","label":"Back","target":"<id of the screen that leads here>"} — a drill-down screen with no way out is a dead end. But a screen that IS one of the TabBar's own tab targets does NOT need a back button — switching tabs is how the user leaves it, so forcing a NavBar there is redundant clutter; skip it (or give it a bare title-only NavBar with no back leading, only if a title is genuinely useful). When you add a new drill-down screen, add its back-target NavBar in the SAME edit, not "later."
@@ -1012,7 +1012,7 @@ c. META-COMMENTARY about the tool itself → no-op.
 d. RETRACTION/UNDO: Clear reversal → remove/revert the specific component.
 e. REFERENTIAL AMBIGUITY: "make that bigger" without clear referent → no-op.
 f. OVERLAPPING GARBLED SPEECH: Can't parse coherent intent → no-op.
-g. SCOPE CREEP/NEW SCREEN (same product): Default to current screen unless explicitly stated ("let's make a settings page"). When creating a new screen, fully compose it per rule 5 (NavBar with title + populated primary content + expected chrome), and set back-nav in NavBar leading pointing to the origin screen. This is NOT a pivot — keep the existing theme and other screens.
+g. SCOPE CREEP/NEW SCREEN (same product): Default to current screen unless explicitly stated ("let's make a settings page", "add a search page", "make a profile screen"). When creating a new screen, fully compose it per rule 5 (NavBar with title + populated primary content + expected chrome), append it to spec.screens (do not only edit the current screen), wire a target from the origin screen (rule 5e), and set back-nav in NavBar leading pointing to the origin screen. This is NOT a pivot — keep the existing theme and other screens.
 h. HYPOTHETICALS BEING WEIGHED: "what if it was a toggle" (not decided) → no-op.
 i. VAGUE QUANTITIES: "a few buttons" → no-op until specific.
 j. REPEATED IDENTICAL REQUESTS: Already in spec → no-op.
@@ -1085,12 +1085,35 @@ _MOCKUP_TYPE_ALIASES = {
 
 
 def _sanitise_spec(spec: dict) -> dict:
-    """Strip or remap any component types outside the fixed vocabulary; never fail outright."""
+    """Strip or remap unknown types; ensure every screen has an id; materialize
+    screens referenced by navigation targets so the user-flow chart never misses
+    a page the mockup can navigate to (e.g. a Search tab/target without a screen)."""
     if not isinstance(spec, dict) or spec.get("noOp") is True:
         return spec
-    for screen in spec.get("screens", []):
+
+    screens = spec.get("screens")
+    if not isinstance(screens, list):
+        return spec
+
+    # Guarantee unique ids + clean components
+    seen_ids: set[str] = set()
+    cleaned_screens: list[dict] = []
+    for i, screen in enumerate(screens):
+        if not isinstance(screen, dict):
+            continue
+        sid = screen.get("id") or f"screen_{i + 1}"
+        sid = str(sid).strip() or f"screen_{i + 1}"
+        if sid in seen_ids:
+            sid = f"{sid}_{i + 1}"
+        seen_ids.add(sid)
+        screen = {**screen, "id": sid}
+        if not screen.get("name"):
+            screen["name"] = sid.replace("screen_", "").replace("_", " ").title() or f"Screen {i + 1}"
+
         cleaned = []
-        for comp in screen.get("components", []):
+        for comp in screen.get("components") or []:
+            if not isinstance(comp, dict):
+                continue
             t = comp.get("type", "")
             if t not in _MOCKUP_VALID_TYPES:
                 remapped = _MOCKUP_TYPE_ALIASES.get(t.lower().replace(" ", "").replace("_", ""))
@@ -1102,6 +1125,136 @@ def _sanitise_spec(spec: dict) -> dict:
                     continue
             cleaned.append(comp)
         screen["components"] = cleaned
+        cleaned_screens.append(screen)
+
+    # Collect every navigation target referenced from components
+    targets: set[str] = set()
+
+    def _walk(comps):
+        for c in comps or []:
+            if not isinstance(c, dict):
+                continue
+            props = c.get("props") or {}
+            t = props.get("target")
+            if t:
+                targets.add(str(t))
+            leading = props.get("leading") or {}
+            if isinstance(leading, dict) and leading.get("target"):
+                targets.add(str(leading["target"]))
+            for link in props.get("links") or []:
+                if isinstance(link, dict) and link.get("target"):
+                    targets.add(str(link["target"]))
+            for tab in props.get("tabs") or []:
+                if isinstance(tab, dict) and tab.get("target"):
+                    targets.add(str(tab["target"]))
+            for row in props.get("rows") or []:
+                if isinstance(row, dict) and row.get("target"):
+                    targets.add(str(row["target"]))
+            if isinstance(props.get("components"), list):
+                _walk(props["components"])
+
+    for screen in cleaned_screens:
+        _walk(screen.get("components"))
+
+    entry_id = cleaned_screens[0]["id"] if cleaned_screens else "screen_home"
+    existing = {s["id"] for s in cleaned_screens}
+
+    def _slug_from_label(label: str, fallback: str) -> str:
+        raw = re.sub(r"[^a-z0-9]+", "_", (label or "").strip().lower()).strip("_")
+        return f"screen_{raw}" if raw else fallback
+
+    def _norm_label(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", (value or "").strip().lower()).strip()
+
+    def _screen_id_for_label(label: str, current_id: str) -> str | None:
+        """Match a tab/link label to an existing screen, or the current screen if it's home-like."""
+        norm = _norm_label(label)
+        if not norm:
+            return None
+        for s in cleaned_screens:
+            name = _norm_label(s.get("name") or "")
+            sid = _norm_label((s.get("id") or "").replace("screen_", "").replace("_", " "))
+            if norm == name or norm == sid:
+                return s["id"]
+            if name and (norm in name or name in norm):
+                return s["id"]
+        # Home-like labels stay on the screen that owns the TabBar
+        if norm in {"home", "listen now", "main", "start", "feed", "for you"}:
+            return current_id
+        return None
+
+    # TabBar tabs / NavBar links often get a label ("Search") but no target — invent
+    # the destination screen and wire the target so the flow chart picks it up.
+    for screen in cleaned_screens:
+        for comp in screen.get("components") or []:
+            if not isinstance(comp, dict):
+                continue
+            if not isinstance(comp.get("props"), dict):
+                comp["props"] = {}
+            props = comp["props"]
+
+            if comp.get("type") == "TabBar":
+                tabs = props.get("tabs") or []
+                for i, tab in enumerate(tabs):
+                    if not isinstance(tab, dict):
+                        continue
+                    if tab.get("target"):
+                        continue
+                    label = tab.get("label") or f"Tab {i + 1}"
+                    matched = _screen_id_for_label(label, screen["id"])
+                    if matched:
+                        tab["target"] = matched
+                        continue
+                    tid = _slug_from_label(label, f"screen_tab_{i + 1}")
+                    tab["target"] = tid
+                    targets.add(tid)
+
+            if comp.get("type") == "NavBar":
+                links = props.get("links") or []
+                for i, link in enumerate(links):
+                    if not isinstance(link, dict):
+                        continue
+                    if link.get("target"):
+                        continue
+                    label = link.get("label") or f"Link {i + 1}"
+                    matched = _screen_id_for_label(label, screen["id"])
+                    if matched:
+                        link["target"] = matched
+                        continue
+                    tid = _slug_from_label(label, f"screen_link_{i + 1}")
+                    link["target"] = tid
+                    targets.add(tid)
+
+    for tid in sorted(targets):
+        if not tid or tid in existing:
+            continue
+        title = tid.replace("screen_", "").replace("_", " ").title() or "Screen"
+        # Prefer a SearchBar on search-like destinations so the page feels real
+        is_search = "search" in tid.lower() or title.lower() == "search"
+        body = (
+            {"id": f"{tid}_search", "type": "SearchBar", "props": {"placeholder": "Search"}}
+            if is_search
+            else {"id": f"{tid}_card", "type": "Card", "props": {"title": title, "body": f"{title} page"}}
+        )
+        cleaned_screens.append({
+            "id": tid,
+            "name": title,
+            "components": [
+                {
+                    "id": f"{tid}_nav",
+                    "type": "NavBar",
+                    "props": {
+                        "title": title,
+                        "leading": {"type": "back", "label": "Back", "target": entry_id},
+                    },
+                },
+                body,
+            ],
+        })
+        existing.add(tid)
+        logger.info("Materialized missing flow screen '%s' from navigation target", tid)
+
+    spec["screens"] = cleaned_screens
     return spec
 
 
@@ -1349,28 +1502,61 @@ async def mockup_endpoint(
 @limiter.limit("30/hour")
 async def mockup_export(
     request: Request,
-    spec_json: str = Form(...),
+    spec_json: str = Form(default=""),
     transcript: str = Form(default=""),
     iteration_number: int = Form(default=1),
+    iterations_json: str = Form(default=""),
 ):
-    """Bundle a single mockup iteration into a standalone zip."""
-    try:
-        spec = json.loads(spec_json)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid spec JSON")
+    """Bundle one or more mockup iterations into a standalone zip.
 
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("spec.json", json.dumps(spec, indent=2, ensure_ascii=False))
-        zf.writestr("transcript.txt", transcript)
+    Prefer `iterations_json` (array of {iterationNumber, spec, transcript, changeLog})
+    so the client can download the full session history in one click. Falls back to a
+    single iteration via spec_json for older clients.
+    """
+    iterations: list[dict] = []
+    if iterations_json:
+        try:
+            parsed = json.loads(iterations_json)
+            if isinstance(parsed, list):
+                iterations = [it for it in parsed if isinstance(it, dict) and it.get("spec")]
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid iterations JSON")
 
-        # Minimal standalone HTML that wraps the spec in a static viewer
+    if not iterations:
+        try:
+            spec = json.loads(spec_json) if spec_json else None
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid spec JSON")
+        if not isinstance(spec, dict):
+            raise HTTPException(status_code=400, detail="Missing spec")
+        iterations = [{
+            "iterationNumber": iteration_number,
+            "spec": spec,
+            "transcript": transcript,
+            "changeLog": spec.get("changeLog") or [],
+        }]
+
+    def _write_iteration(zf: zipfile.ZipFile, folder: str, it: dict) -> None:
+        spec = it.get("spec") or {}
+        num = int(it.get("iterationNumber") or 1)
+        tr = it.get("transcript") or ""
+        log = it.get("changeLog") or spec.get("changeLog") or []
+        prefix = f"{folder}/" if folder else ""
+
+        zf.writestr(f"{prefix}spec.json", json.dumps(spec, indent=2, ensure_ascii=False))
+        zf.writestr(f"{prefix}transcript.txt", tr)
+        if log:
+            zf.writestr(
+                f"{prefix}changelog.txt",
+                "\n".join(f"- {entry}" for entry in log) + "\n",
+            )
+
         html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Iteration {iteration_number}</title>
+<title>Iteration {num}</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -1380,16 +1566,40 @@ async def mockup_export(
 <script src="script.js"></script>
 </body>
 </html>"""
-        zf.writestr("index.html", html)
+        zf.writestr(f"{prefix}index.html", html)
 
         css = """body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#1c1c1e;font-family:-apple-system,"SF Pro Text",system-ui,sans-serif}
 .frame{width:375px;height:667px;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.5);padding:16px;box-sizing:border-box;overflow-y:auto}
 pre{font-size:11px;white-space:pre-wrap;word-break:break-all;color:#1c1c1e}"""
-        zf.writestr("styles.css", css)
-        zf.writestr("script.js", "// Buddy mockup export — iteration " + str(iteration_number))
+        zf.writestr(f"{prefix}styles.css", css)
+        zf.writestr(f"{prefix}script.js", f"// Buddy mockup export — iteration {num}")
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        if len(iterations) == 1:
+            _write_iteration(zf, "", iterations[0])
+            only_num = int(iterations[0].get("iterationNumber") or 1)
+            filename = f"iteration-{only_num:02d}.zip"
+        else:
+            # Manifest + one folder per iteration
+            manifest = {
+                "iterationCount": len(iterations),
+                "iterations": [
+                    {
+                        "iterationNumber": it.get("iterationNumber"),
+                        "folder": f"iteration-{int(it.get('iterationNumber') or i + 1):02d}",
+                        "transcriptPreview": (it.get("transcript") or "")[:160],
+                    }
+                    for i, it in enumerate(iterations)
+                ],
+            }
+            zf.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
+            for i, it in enumerate(iterations):
+                num = int(it.get("iterationNumber") or i + 1)
+                _write_iteration(zf, f"iteration-{num:02d}", it)
+            filename = f"buddy-mockup-{len(iterations)}-iterations.zip"
 
     zip_buffer.seek(0)
-    filename = f"iteration-{iteration_number:02d}.zip"
     return Response(
         content=zip_buffer.getvalue(),
         media_type="application/zip",
