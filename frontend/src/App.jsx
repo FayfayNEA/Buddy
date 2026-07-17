@@ -1416,31 +1416,38 @@ export default function App() {
     mergeModeRef.current = false;
     setMergeMode(false);
     originalHistoriesRef.current = [];
-    const count = participantCountRef.current;
-    const empty = Array.from({ length: count }, () => []);
-    setSpeakerHistories(empty);
-    setSpeakerIndices(new Array(count).fill(0));
-    setSpeakerStatuses(new Array(count).fill('Idle'));
-    setSpeakerGenerating(new Array(count).fill(false));
-    speakerHistoryRefs.current = Array.from({ length: count }, () => []);
-    audioQueuesRef.current = Array.from({ length: count }, () => []);
-    isProcessingRefs.current = new Array(count).fill(false);
-    // Reset mockup state (per-mind)
-    setMockupStacks(empty);
-    setMockupCurrentIdxs(new Array(count).fill(0));
-    setMockupGenerating(new Array(count).fill(false));
-    setMockupErrors(new Array(count).fill(null));
-    setMockupActiveScreenIds(new Array(count).fill(null));
-    setMockupShowFlow(new Array(count).fill(false));
-    setMockupShowTranscript(new Array(count).fill(false));
-    setActiveMockupMind(0);
+    // Back to "How many minds are in the room?"
+    participantCountRef.current = 1;
+    setParticipantCount(null);
+    setActiveSpeaker(null);
     setSpeaking(false);
     setMockupOutcome(null);
-    mockupPreviousSpecRefs.current = new Array(count).fill(null);
-    mockupPendingRefs.current = Array.from({ length: count }, () => []);
-    mockupBusyRefs.current = new Array(count).fill(false);
-    mockupQueuesRef.current = Array.from({ length: count }, () => []);
-    mockupStacksRef.current = empty;
+    setBadgeDocked(false);
+    setBadgeLeftPx(null);
+    setListenHint(null);
+    setMicError(null);
+    setAppMode('image');
+    // Clear all session content so the next pick starts clean
+    setSpeakerHistories([]);
+    setSpeakerIndices([]);
+    setSpeakerStatuses([]);
+    setSpeakerGenerating([]);
+    speakerHistoryRefs.current = [];
+    audioQueuesRef.current = [];
+    isProcessingRefs.current = [];
+    setMockupStacks([]);
+    setMockupCurrentIdxs([]);
+    setMockupGenerating([]);
+    setMockupErrors([]);
+    setMockupActiveScreenIds([]);
+    setMockupShowFlow([]);
+    setMockupShowTranscript([]);
+    setActiveMockupMind(0);
+    mockupPreviousSpecRefs.current = [];
+    mockupPendingRefs.current = [];
+    mockupBusyRefs.current = [];
+    mockupQueuesRef.current = [];
+    mockupStacksRef.current = [];
   };
 
   // ── Merge all speakers into one unified channel ────────────────────────────

@@ -189,12 +189,29 @@ app = FastAPI()
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-_allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+_ALWAYS_ALLOW_ORIGINS = [
+    "https://www.meetbuddy.xyz",
+    "https://meetbuddy.xyz",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "*").strip() or "*"
+if _raw_origins == "*":
+    # Wildcard + credentials is invalid in browsers; prefer reflecting any origin
+    # by disabling credentials when * is configured.
+    _allowed_origins = ["*"]
+    _allow_credentials = False
+else:
+    _allowed_origins = list(dict.fromkeys(
+        [o.strip() for o in _raw_origins.split(",") if o.strip()] + _ALWAYS_ALLOW_ORIGINS
+    ))
+    _allow_credentials = True
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
-    allow_credentials=True,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -209,7 +226,7 @@ def _log_startup():
         bool(os.getenv("FAL_KEY")),
         FAL_IMAGE_MODEL,
     )
-    logger.info("CORS allowed origins: %s", _allowed_origins)
+    logger.info("CORS allowed origins: %s (credentials=%s)", _allowed_origins, _allow_credentials)
 
 
 _DEBUG_SECRET = os.getenv("DEBUG_SECRET", "")
