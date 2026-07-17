@@ -194,9 +194,9 @@ body {
   scrollbar-color: rgba(140, 120, 190, 0.45) transparent;
 }
 
-/* Multi-mind: lock the content area to the viewport so cards fit without page scroll */
+/* Multi-mind: keep the shell fixed, but let the inner scroller handle tall 2-row grids */
 .app--scrollable .app-scroll {
-  overflow-y: hidden;
+  overflow-y: auto;
 }
 
 .app--scrollable .app-inner,
@@ -1355,10 +1355,10 @@ body {
   margin: auto;
   column-gap: var(--mind-grid-column-gap);
   row-gap: var(--mind-grid-row-gap);
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
-  height: 100%;
-  align-content: center;
+  height: auto;
+  align-content: start;
   justify-content: center;
   box-sizing: border-box;
 }
@@ -1376,6 +1376,13 @@ body {
 
 .panels-row--4 {
   flex-wrap: unset;
+}
+
+/* 3 minds: center the leftover mind under the top row */
+.panels-row--3 .speaker-panel:nth-child(3) {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: calc((100% - var(--mind-grid-column-gap)) / 2);
 }
 
 .panels-row--2 .speaker-panel,
@@ -1636,11 +1643,31 @@ body {
   margin: auto;
   column-gap: 14px;
   row-gap: var(--mind-grid-row-gap);
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
-  height: 100%;
-  align-content: center;
+  height: auto;
+  align-content: start;
   flex-wrap: unset;
+}
+
+/* 5 minds: 6-col track so the bottom pair centers under the top three */
+.panels-row--5 {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  column-gap: var(--mind-grid-column-gap);
+}
+
+.panels-row--5 .speaker-panel:nth-child(1),
+.panels-row--5 .speaker-panel:nth-child(2),
+.panels-row--5 .speaker-panel:nth-child(3) {
+  grid-column: span 2;
+}
+
+.panels-row--5 .speaker-panel:nth-child(4) {
+  grid-column: 2 / 4;
+}
+
+.panels-row--5 .speaker-panel:nth-child(5) {
+  grid-column: 4 / 6;
 }
 
 .panels-row--5 .speaker-panel,
@@ -2375,13 +2402,16 @@ body {
 .app--scrollable .mode-content-slot > *,
 .app--scrollable .panels-row,
 .app--scrollable .mockup-cells-row {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
 }
 
+/* Let multi-row mind grids keep natural height so bottom cards never crush the top */
 .app--scrollable .mode-content-slot [class*="panels-row"],
 .app--scrollable .mode-content-slot .mockup-cells-row {
-  height: 100%;
+  height: auto;
+  margin-top: auto;
+  margin-bottom: auto;
 }
 
 @media (max-width: 900px) {
@@ -3014,9 +3044,18 @@ body {
     overflow: visible;
   }
 
+  .panels-row--3 .speaker-panel:nth-child(3),
+  .panels-row--5 .speaker-panel:nth-child(n) {
+    grid-column: auto !important;
+    justify-self: stretch;
+    width: 100%;
+  }
+
   .app--scrollable .mode-content-slot [class*="panels-row"] {
     height: auto !important;
     flex: none;
+    margin-top: 0;
+    margin-bottom: 0;
   }
 
   .app--scrollable .app-scroll {
