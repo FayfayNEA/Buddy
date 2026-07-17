@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { TOKENS } from './tokens.js';
 
 const ff = TOKENS.fontFamily;
@@ -16,6 +16,12 @@ function collectEdges(screens) {
     const navBar = comps.find(c => c.type === 'NavBar');
     if (navBar?.props?.leading?.target) {
       edges.push({ from: screen.id, to: navBar.props.leading.target, kind: 'back' });
+    }
+    // Web/desktop top-nav links (NavBar.props.links)
+    for (const link of navBar?.props?.links || []) {
+      if (link?.target && link.target !== screen.id) {
+        edges.push({ from: screen.id, to: link.target, kind: 'link' });
+      }
     }
     const tabBar = comps.find(c => c.type === 'TabBar');
     for (const tab of tabBar?.props?.tabs || []) {
@@ -55,12 +61,13 @@ function rankScreens(screens, edges) {
     rank[id] = r;
     for (const next of adjacency[id] || []) if (!seen.has(next)) queue.push([next, r + 1]);
   }
-  let maxRank = Math.max(0, ...Object.values(rank));
+  let maxRank = Object.keys(rank).length ? Math.max(0, ...Object.values(rank)) : 0;
   screens.forEach(s => { if (rank[s.id] === undefined) rank[s.id] = ++maxRank; });
   return rank;
 }
 
 export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewire }) {
+  const arrowMarkerId = useId().replace(/:/g, '');
   const [positions, setPositions] = useState({});
   const [tempLine, setTempLine] = useState(null); // {fromId, x, y} — connector being dragged
   const [hoverTarget, setHoverTarget] = useState(null);
@@ -172,23 +179,20 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
     <div
       ref={containerRef}
       className="flowchart-canvas"
-      style={{ position: 'relative', width: '100%', height: maxY, minWidth: maxX, fontFamily: ff }}
+      style={{ position: 'relative', width: '100%', height: maxY, minWidth: Math.min(maxX, 480), fontFamily: ff }}
     >
       <svg width={maxX} height={maxY} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         <defs>
-          <marker id="flow-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="var(--purple-border, #9b8afb)" />
+          <marker id={arrowMarkerId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#9b8afb" />
           </marker>
         </defs>
         {edges.map((e, i) => {
           const from = getPos(e.from);
           const to = getPos(e.to);
-          if (!positions[e.from] || !positions[e.to]) return null;
+          const stroke = e.kind === 'back' ? '#C7C7CC' : '#9b8afb';
 
-          // Self-referencing edge (a button/nav target pointing back at its own screen) —
-          // drawing this as a straight line would cut right through the node, so loop it
-          // below the box instead (there's always headroom there — see the `+ 40` margin
-          // baked into maxY below, whereas the first row sits at y:24 and would clip above).
+          // Self-referencing edge — loop below the node
           if (e.from === e.to) {
             const x1 = from.x + NODE_W - 24, y1 = from.y + NODE_H;
             const x2 = from.x + 24, y2 = from.y + NODE_H;
@@ -198,10 +202,10 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
                 key={i}
                 d={`M${x1},${y1} C${x1},${liftY} ${x2},${liftY} ${x2},${y2}`}
                 fill="none"
-                stroke={e.kind === 'back' ? '#C7C7CC' : 'var(--purple-border, #9b8afb)'}
+                stroke={stroke}
                 strokeWidth={2}
                 strokeDasharray={e.kind === 'back' ? '4 4' : 'none'}
-                markerEnd="url(#flow-arrow)"
+                markerEnd={`url(#${arrowMarkerId})`}
               />
             );
           }
@@ -214,10 +218,10 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
               key={i}
               d={`M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}`}
               fill="none"
-              stroke={e.kind === 'back' ? '#C7C7CC' : 'var(--purple-border, #9b8afb)'}
+              stroke={stroke}
               strokeWidth={2}
               strokeDasharray={e.kind === 'back' ? '4 4' : 'none'}
-              markerEnd="url(#flow-arrow)"
+              markerEnd={`url(#${arrowMarkerId})`}
             />
           );
         })}
@@ -245,11 +249,14 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               padding: '0 14px', textAlign: 'center', boxSizing: 'border-box',
               borderRadius: 12, cursor: 'grab', userSelect: 'none',
-              background: isActive ? 'var(--purple-light, #ece7fd)' : 'var(--bg-elevated, #fff)',
-              border: `1.5px solid ${isHoverTarget ? '#7c5cfc' : isActive ? 'var(--purple-border, #9b8afb)' : 'var(--border, #e5e5ea)'}`,
+              // Active uses a solid fill — --purple-light is rgba(..., 0.42) and looked washed out
+              background: isActive ? '#ece7fd' : 'var(--bg-elevated, #fff)',
+              border: `1.5px solid ${isHoverTarget ? '#7c5cfc' : isActive ? '#9b8afb' : 'var(--border, #e5e5ea)'}`,
               boxShadow: isHoverTarget ? '0 0 0 3px rgba(124,92,252,0.25)' : '0 1px 4px rgba(0,0,0,0.06)',
-              fontSize: 13, fontWeight: 600, color: 'var(--text, #1c1c1e)',
-              transition: 'border-color 0.15s, box-shadow 0.15s',
+              fontSize: 13, fontWeight: 600,
+              color: 'var(--text, #1c1c1e)',
+              opacity: 1,
+              transition: 'border-color 0.15s, box-shadow 0.15s, background 0.15s',
             }}
             title="Drag to move · click to view · drag from the dot to rewire"
           >

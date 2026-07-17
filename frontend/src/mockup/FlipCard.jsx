@@ -1,11 +1,28 @@
 import { useState } from 'react';
 import axios from 'axios';
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+const API_BASE = (
+  import.meta.env.VITE_API_URL
+  || (import.meta.env.DEV ? window.location.origin : 'http://localhost:8000')
+).replace(/\/$/, '');
 
-export default function FlipCard({ front, transcript, changeLog, iterationNumber }) {
-  const [flipped, setFlipped] = useState(false);
+export default function FlipCard({
+  front,
+  transcript,
+  changeLog,
+  iterationNumber,
+  compact = false,
+  flipped: controlledFlipped,
+  onToggleFlip,
+  hideToggle = false,
+}) {
+  const [internalFlipped, setInternalFlipped] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const flipped = controlledFlipped ?? internalFlipped;
+  const toggleFlipped = () => {
+    if (onToggleFlip) onToggleFlip();
+    else setInternalFlipped(f => !f);
+  };
 
   const handleDownload = async (e) => {
     e.stopPropagation();
@@ -16,7 +33,9 @@ export default function FlipCard({ front, transcript, changeLog, iterationNumber
       formData.append('spec_json', JSON.stringify(front?.props?.spec || {}));
       formData.append('transcript', transcript || '');
       formData.append('iteration_number', String(iterationNumber));
-      const res = await axios.post(`${API_BASE}/mockup-export`, formData, { responseType: 'blob' });
+      const res = await axios.post(`${API_BASE}/mockup-export`, formData, {
+        responseType: 'blob', timeout: 120000,
+      });
       const url = URL.createObjectURL(res.data);
       const a = document.createElement('a');
       a.href = url;
@@ -34,26 +53,30 @@ export default function FlipCard({ front, transcript, changeLog, iterationNumber
   };
 
   // Match the card size to the mockup's form factor (phone vs. desktop browser).
-  // Width + aspectRatio (not a fixed height) so the CSS max-width cap on small/mobile
-  // viewports shrinks the card proportionally instead of leaving a stale, oversized height.
+  // iPhone 17's standard logical viewport is 402×874. The responsive width keeps
+  // that aspect ratio while fitting shorter desktop and narrower mobile viewports.
   const platform = String(front?.props?.spec?.platform || front?.props?.spec?.formFactor || '').toLowerCase();
   const isWeb = ['web', 'website', 'desktop', 'browser'].includes(platform);
   const cardSize = isWeb
-    ? { width: 880, height: 'auto', aspectRatio: '880 / 560' }
-    : { width: 280, height: 'auto', aspectRatio: '280 / 520' };
+    ? compact
+      ? undefined
+      : {
+          width: '100%',
+          height: '100%',
+        }
+    : compact
+      ? undefined
+      : {
+          // iPhone 17 logical viewport: 402×874. Cap display width so the device
+          // silhouette stays phone-thin (not a near-full-bleed thick card).
+          width: 'min(402px, 78vw, calc((100dvh - 230px) * 402 / 874))',
+          height: 'auto',
+          aspectRatio: '402 / 874',
+        };
 
   return (
-    <div className={`flip-card-shell${isWeb ? ' flip-card-shell--web' : ''}`}>
-      {/* Side toggle — flips the card without stealing clicks from the live mockup */}
-      <button
-        className="flip-card-toggle"
-        onClick={() => setFlipped(f => !f)}
-        title={flipped ? 'Back to mockup' : 'See transcript'}
-      >
-        {flipped ? '‹ mockup' : 'transcript ›'}
-      </button>
-
-      <div className={`flip-card${flipped ? ' flip-card--flipped' : ''}`} style={cardSize}>
+    <div className={`flip-card-shell${isWeb ? ' flip-card-shell--web' : ''}${compact ? ' flip-card-shell--compact' : ''}`}>
+      <div className={`flip-card${flipped ? ' flip-card--flipped' : ''}${compact ? ' mind-card' : ''}`} style={cardSize}>
         <div className="flip-card-inner">
           {/* Front: the live mockup — fully interactive, clicks go to the prototype */}
           <div className="flip-card-face flip-card-front">
@@ -93,6 +116,16 @@ export default function FlipCard({ front, transcript, changeLog, iterationNumber
           </div>
         </div>
       </div>
+
+      {!hideToggle && (
+        <button
+          className="flip-card-toggle"
+          onClick={toggleFlipped}
+          title={flipped ? 'Back to mockup' : 'See transcript'}
+        >
+          {flipped ? 'mockup' : 'transcript'}
+        </button>
+      )}
     </div>
   );
 }

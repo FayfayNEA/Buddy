@@ -13,8 +13,8 @@ from collections import deque
 from datetime import datetime, timezone
 from threading import Lock
 import requests
-from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
-from fastapi.responses import Response
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Query
+from fastapi.responses import Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -28,6 +28,13 @@ from reportlab.lib.utils import simpleSplit
 import asyncio
 
 load_dotenv()
+
+# Normalize secret env vars — .env files often pick up accidental leading/trailing spaces
+# which break Fal/OpenAI auth without an obvious "key missing" signal.
+for _secret_env in ("FAL_KEY", "OPENAI_API_KEY", "DEBUG_SECRET"):
+    _raw = os.getenv(_secret_env)
+    if _raw is not None and _raw != _raw.strip():
+        os.environ[_secret_env] = _raw.strip()
 
 
 def _ensure_console_logger(name: str = "consensus_engine") -> logging.Logger:
@@ -61,7 +68,7 @@ _trace_lock = Lock()
 # count remaining — video generation is slow/expensive and the demo only needs to prove it
 # works once. Usage is tracked by BOTH a browser UUID token and the client IP; the effective
 # count is the larger of the two, so clearing localStorage alone doesn't grant a fresh allowance.
-_DEMO_LIMIT = int(os.getenv("DEMO_LIMIT", "4"))
+_DEMO_LIMIT = int(os.getenv("DEMO_LIMIT", "5"))
 _VIDEO_DEMO_LIMIT = int(os.getenv("VIDEO_DEMO_LIMIT", "1"))
 _demo_tokens: dict = {}       # token -> use_count (general)
 _demo_ip_usage: dict = {}     # client_ip -> use_count (general)
@@ -238,6 +245,44 @@ def debug_trace(request: Request, limit: int = 50):
             "count_returned": min(limit, len(_request_trace)),
             "entries": list(_request_trace)[:limit],
         }
+
+
+_FAL_MEDIA_HOST_RE = re.compile(
+    r"^https://([a-z0-9-]+\.)*(fal\.media|fal\.ai)(:\d+)?/",
+    re.IGNORECASE,
+)
+
+
+@app.get("/media-proxy")
+def media_proxy(url: str = Query(..., min_length=12, max_length=2000)):
+    """Stream Fal CDN media without their CSP: sandbox header, which breaks
+    <img>/<video> embedding on some mobile browsers."""
+    cleaned = (url or "").strip()
+    if not _FAL_MEDIA_HOST_RE.match(cleaned):
+        raise HTTPException(status_code=400, detail="Only fal.media / fal.ai URLs allowed")
+    try:
+        upstream = requests.get(cleaned, timeout=45, stream=True)
+    except requests.RequestException as exc:
+        logger.warning("media-proxy fetch failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Upstream fetch failed") from exc
+    if upstream.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Upstream status {upstream.status_code}")
+
+    content_type = upstream.headers.get("Content-Type") or "application/octet-stream"
+    # Strip hop-by-hop / security headers from Fal that break embedding
+    headers = {
+        "Cache-Control": "public, max-age=86400",
+        "Content-Type": content_type,
+    }
+    if upstream.headers.get("Content-Length"):
+        headers["Content-Length"] = upstream.headers["Content-Length"]
+
+    return StreamingResponse(
+        upstream.iter_content(chunk_size=64 * 1024),
+        status_code=200,
+        headers=headers,
+        media_type=content_type,
+    )
 
 
 def _fal_video_url(result):
@@ -909,9 +954,9 @@ CORE RULES:
      • Google/Material: accent "blue" (#4285F4), light mode, radius "rounded"
      Each of these must produce a visibly different result — different accent hue, different radius, and light vs. dark — so the user can tell them apart at a glance.
    - To recolor just ONE element, put a color on that component: Button {color:"green"}, Icon {color:"#FF9500"}, Badge {color:"red"}, ListRow {iconColor:"purple"}.
-   - Default (nothing specified) is a light theme, blue accent, "soft" 8px radius — refined and neutral, not colorful. Always ACT on an explicit color/radius/style request — never no-op it. Preserve an already-set theme across later iterations unless the user changes it again.
+   - Default (nothing specified) is a light theme, blue accent, "soft" 8px radius — refined and neutral, not colorful. Always ACT on an explicit color/radius/style request — never no-op it. Preserve an already-set theme across later iterations unless the user changes it again OR pivots to a different product (rule 8) — a pivot must also replace the theme/vibe.
 
-3. REFINEMENT OVER ADDITION. Rapid back-and-forth about the same idea modifies existing components, not duplicates them.
+3. REFINEMENT OVER ADDITION — EXCEPT ON A CONCEPT PIVOT. Rapid back-and-forth about the same idea modifies existing components, not duplicates them. But if the user replaces the product itself (see rule 8), do NOT refine — rebuild.
 
 4. WAIT FOR PRECISION — BUT DON'T STARVE GENERATION. Pure filler with no product content (greetings, "um", silence artifacts, song lyrics) → no-op. But once a concrete app, screen, feature, flow, or content type IS named — even imperfectly ("trucking app", "three screens", "settings page", "make the button blue") — ACT immediately. Prefer a solid first screen over another no-op.
 
@@ -946,9 +991,19 @@ CORE RULES:
 
 5f. DRILL-DOWN SCREENS MUST HAVE A WAY BACK — TAB-BAR SCREENS DO NOT. If a screen is reached by tapping into something (a list row, a button, a "view details" action) rather than by a TabBar tab, it MUST include a NavBar with props.leading = {"type":"back","label":"Back","target":"<id of the screen that leads here>"} — a drill-down screen with no way out is a dead end. But a screen that IS one of the TabBar's own tab targets does NOT need a back button — switching tabs is how the user leaves it, so forcing a NavBar there is redundant clutter; skip it (or give it a bare title-only NavBar with no back leading, only if a title is genuinely useful). When you add a new drill-down screen, add its back-target NavBar in the SAME edit, not "later."
 
-6. REFINE, DON'T PILE UP. Follow-up talk about the same thing edits existing components in place. NEVER REMOVE unless removal is explicit and unambiguous.
+6. REFINE, DON'T PILE UP — EXCEPT ON A FULL PIVOT. Follow-up talk about the same product edits existing components in place. NEVER REMOVE unless removal is explicit and unambiguous — OR the user has pivoted to a different product (rule 8), in which case you MUST discard the old screens/chrome and rebuild.
 
 7. COMBINE FRAGMENTS. Speech arrives in short chunks that split sentences mid-thought. When earlier unconsumed fragments are provided, read them TOGETHER with the new chunk as one continuous utterance. If the combined text expresses a concrete UI intent (e.g. "generate for me" + "a blue" + "iPhone app home screen"), ACT on it now — do not wait for a perfectly formed sentence in a single chunk. A first iteration with a plausible starting screen beats an endless no-op streak. Bias toward action once any concrete noun (screen, button, list, field, header...) or color/style has been mentioned.
+
+8. DRASTIC CONCEPT PIVOT = FULL REBUILD. If the user abandons the current product idea for a different one, treat it like starting over — do NOT try to morph the existing music/trucking/settings UI into the new product by renaming a few labels. Detect pivots from language like:
+   - "actually make/generate me a …", "scratch that", "forget the music app", "instead make a …", "change it to a …", "no, a Facebook-like app", "pivot to …", "start over with …", "different app — …"
+   - Or simply naming a clearly different product category than what the previous spec is (Apple Music / Spotify → Facebook / Instagram / Twitter; trucking logistics → coffee shop landing page; banking → dating app; etc.).
+   When you detect a pivot:
+   a. REPLACE spec.screens entirely with brand-new screens for the new product (new ids are fine; do not keep old screen ids or leftover TabBars/Lists from the old app).
+   b. REPLACE theme/vibe/layout to match the new product (accent, light/dark, radius, imagery queries, icon set, TabBar structure). A social feed should not still look like a music player; a commerce app should not keep a Listen Now tab.
+   c. RECOMPOSE per rule 5 as if this were iteration 1 of the new product — full realistic content, wired flow (rule 5e), correct platform.
+   d. Set previousIterationRef to the prior iterationNumber, bump iterationNumber, and put a blunt changeLog entry like: "pivoted from music app to social feed — full rebuild of screens, theme, and navigation".
+   e. Do NOT no-op a clear pivot. Do NOT "add a Facebook screen" onto a music app. The whole vibe and layout must change.
 
 FRINGE CASES:
 a. CONTRADICTION/DISAGREEMENT: If speakers disagree in the same chunk, no-op — wait for resolution.
@@ -957,10 +1012,11 @@ c. META-COMMENTARY about the tool itself → no-op.
 d. RETRACTION/UNDO: Clear reversal → remove/revert the specific component.
 e. REFERENTIAL AMBIGUITY: "make that bigger" without clear referent → no-op.
 f. OVERLAPPING GARBLED SPEECH: Can't parse coherent intent → no-op.
-g. SCOPE CREEP/NEW SCREEN: Default to current screen unless explicitly stated ("let's make a settings page"). When creating a new screen, fully compose it per rule 5 (NavBar with title + populated primary content + expected chrome), and set back-nav in NavBar leading pointing to the origin screen.
+g. SCOPE CREEP/NEW SCREEN (same product): Default to current screen unless explicitly stated ("let's make a settings page"). When creating a new screen, fully compose it per rule 5 (NavBar with title + populated primary content + expected chrome), and set back-nav in NavBar leading pointing to the origin screen. This is NOT a pivot — keep the existing theme and other screens.
 h. HYPOTHETICALS BEING WEIGHED: "what if it was a toggle" (not decided) → no-op.
 i. VAGUE QUANTITIES: "a few buttons" → no-op until specific.
 j. REPEATED IDENTICAL REQUESTS: Already in spec → no-op.
+k. SAME-PRODUCT RESTYLE vs PIVOT: "make it look more like Spotify" while already making a music app → theme/style tweak (rule 2), keep screens. "actually generate me a Facebook-like app" while on a music app → rule 8 full rebuild.
 
 OUTPUT BEHAVIOR:
 - If ANY confident, resolvable change: output the full updated spec JSON with changeType "added"/"modified"/"removed" on affected components and a changeLog array.
@@ -1050,14 +1106,22 @@ def _sanitise_spec(spec: dict) -> dict:
 
 
 def _validate_mockup_spec(spec: dict) -> bool:
-    """Return False only for structurally broken output (missing screens list)."""
+    """Return False for structurally broken or empty output."""
     if not isinstance(spec, dict):
         return False
     if spec.get("noOp") is True:
         return True
-    if not isinstance(spec.get("screens"), list):
+    screens = spec.get("screens")
+    if not isinstance(screens, list) or len(screens) == 0:
         return False
-    return True
+    # Reject blank shells that would burn a demo credit for nothing
+    has_content = any(
+        isinstance(s, dict)
+        and isinstance(s.get("components"), list)
+        and len(s.get("components") or []) > 0
+        for s in screens
+    )
+    return has_content
 
 
 def _has_stutter_loop(words: list, min_repeats: int = 3) -> bool:
@@ -1122,6 +1186,8 @@ _MOCKUP_INTENT_HINTS = (
     "dark mode", "light mode", "truck", "shipping", "map", "list", "card",
     "want", "need", "like", "put", "move", "go to", "open", "click", "tap",
     "header", "footer", "menu", "form", "field", "toggle", "slider", "image",
+    "actually", "instead", "scratch that", "start over", "pivot", "forget",
+    "facebook", "instagram", "twitter", "spotify", "music", "social",
 )
 
 
@@ -1178,6 +1244,14 @@ def _call_live_patch(previous_spec_json: str, transcript: str, context_text: str
             f"(combine them with the new chunk to infer intent):\n{context_text}\n"
         )
     user_content += f"\nNew transcript chunk:\n{transcript}"
+    # Remind the model when a prior app already exists — pivots must rebuild, not rename.
+    prev = (previous_spec_json or "").strip()
+    if prev and prev not in ("null", "None", "{}"):
+        user_content += (
+            "\n\nReminder: if this chunk replaces the product concept with a different one "
+            "(e.g. music → social network, logistics → coffee shop), apply rule 8 — full rebuild "
+            "of screens, theme, vibe, and navigation. Do not keep leftover chrome from the old app."
+        )
     response = client.chat.completions.create(
         model="gpt-4o",
         response_format={"type": "json_object"},
@@ -1185,8 +1259,9 @@ def _call_live_patch(previous_spec_json: str, transcript: str, context_text: str
             {"role": "system", "content": _MOCKUP_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ],
-        max_tokens=2000,
-        temperature=0.3,
+        # Full pivots rewrite every screen — need enough room for a complete new spec.
+        max_tokens=3500,
+        temperature=0.35,
     )
     return json.loads(response.choices[0].message.content)
 

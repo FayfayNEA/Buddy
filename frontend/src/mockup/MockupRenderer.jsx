@@ -1,4 +1,4 @@
-import { useState, useCallback, createContext, useContext } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, createContext, useContext } from 'react';
 import { TOKENS } from './tokens.js';
 import { SvgIcon, hasSvgIcon } from './icons.jsx';
 
@@ -792,7 +792,7 @@ function WebTopBar({ title, links, activeIdx, onNav }) {
     <div style={{
       height: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '0 32px', background: C.background,
-      borderBottom: `1px solid ${C.separator}`, flexShrink: 0, fontFamily: ff,
+      flexShrink: 0, fontFamily: ff,
     }}>
       <div style={{ fontSize: 20, fontWeight: 700, color: C.label, letterSpacing: '-0.02em' }}>
         {title || 'Home'}
@@ -813,10 +813,10 @@ function WebTopBar({ title, links, activeIdx, onNav }) {
 }
 
 // ─── MockupRenderer ───────────────────────────────────────────────────────────
-// Renders a spec into an interactive frame — a 375×667 iOS phone, or a wider
+// Renders a spec into an interactive frame — an iPhone 17-sized 402×874 phone, or a wider
 // desktop browser when spec.platform is "web"/"desktop" — with a themeable accent.
 
-export default function MockupRenderer({ spec, activeScreenId, onScreenChange }) {
+export default function MockupRenderer({ spec, activeScreenId, onScreenChange, scaleToFit = false }) {
   // Uncontrolled by default (used standalone, e.g. in export); controlled when a
   // parent (the flowchart view) wants to drive which screen is showing.
   const [internalScreenId, setInternalScreenId] = useState(null);
@@ -824,13 +824,68 @@ export default function MockupRenderer({ spec, activeScreenId, onScreenChange })
   const currentScreenId = isControlled ? activeScreenId : internalScreenId;
   const setCurrentScreenId = isControlled ? (onScreenChange || (() => {})) : setInternalScreenId;
   const [activeTab, setActiveTab] = useState(0);
+  const fitRef = useRef(null);
+  const [fitScale, setFitScale] = useState(1);
+  // Design viewport for scaled-down mockups — content lays out at this size,
+  // then CSS-scales to fill the card so nothing gets clipped awkwardly.
+  const DESIGN_W = 900;
+  const DESIGN_H = 560;
+  const PHONE_W = 402;
+  const PHONE_H = 874;
+
+  // Keep tab / web-nav highlight in sync when flowchart (or parent) changes screen
+  useEffect(() => {
+    if (!spec?.screens?.length) return;
+    const screenId = currentScreenId || spec.screens[0]?.id;
+    if (!screenId) return;
+
+    for (const screen of spec.screens) {
+      const comps = screen.components || [];
+      const tabBar = comps.find(c => c.type === 'TabBar');
+      const tabs = tabBar?.props?.tabs || [];
+      const tabIdx = tabs.findIndex(t => t.target === screenId);
+      if (tabIdx >= 0) {
+        setActiveTab(tabIdx);
+        return;
+      }
+      const navBar = comps.find(c => c.type === 'NavBar');
+      const links = navBar?.props?.links || [];
+      const linkIdx = links.findIndex(l => l.target === screenId);
+      if (linkIdx >= 0) {
+        setActiveTab(linkIdx);
+        return;
+      }
+    }
+  }, [currentScreenId, spec]);
+
+  // Scale a full-size layout into a smaller card without inner scroll/cutoff.
+  // Must run before any early return so hook order stays stable.
+  const platformHint = String(spec?.platform || spec?.formFactor || '').toLowerCase();
+  const isWebHint = ['web', 'website', 'desktop', 'browser'].includes(platformHint);
+  const fitDesignW = isWebHint ? DESIGN_W : PHONE_W;
+  const fitDesignH = isWebHint ? DESIGN_H : PHONE_H;
+  useLayoutEffect(() => {
+    if (!scaleToFit) return undefined;
+    const el = fitRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const update = () => {
+      const { clientWidth: w, clientHeight: h } = el;
+      if (w <= 0 || h <= 0) return;
+      const next = Math.min(w / fitDesignW, h / fitDesignH);
+      setFitScale((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // Don't depend on `spec` — iteration swaps should keep the same fitted scale
+    // and avoid a flash when the observer reconnects.
+  }, [scaleToFit, isWebHint, fitDesignW, fitDesignH]);
 
   if (!spec || !Array.isArray(spec.screens) || spec.screens.length === 0) {
-    // Matches FlipCard's default (non-web) frame size — this renders inside a
-    // fixed, overflow:hidden card, so anything bigger than that gets silently clipped.
     return (
       <div style={{
-        width: 280, height: 520, background: LIGHT.secondaryBackground,
+        width: '100%', height: '100%', background: LIGHT.secondaryBackground,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontFamily: ff, color: LIGHT.systemGray, fontSize: 15,
       }}>
@@ -890,23 +945,32 @@ export default function MockupRenderer({ spec, activeScreenId, onScreenChange })
   const radius = resolveRadius(theme);
 
   // Form factor: phone (default) vs. desktop browser
-  const isWeb = ['web', 'website', 'desktop', 'browser'].includes(
-    String(spec.platform || spec.formFactor || '').toLowerCase()
-  );
-  // Must match FlipCard's outer card size exactly (280×520 / 880×560) — FlipCard's
-  // frame has overflow:hidden, so any mismatch here silently clips the rendered mockup.
-  const W = isWeb ? 880 : 280;
-  const H = isWeb ? 560 : 520;
+  const isWeb = isWebHint;
+
+  // The renderer fills FlipCard. When scaleToFit is on, phone/web content
+  // lays out at design size and CSS-scales into the available cell.
+  const W = '100%';
+  const H = '100%';
+  const useFit = !!scaleToFit;
+  const fitW = isWeb ? DESIGN_W : PHONE_W;
+  const fitH = isWeb ? DESIGN_H : PHONE_H;
 
   const body = (
-    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+    <div style={{
+      flex: 1,
+      overflowY: useFit ? 'hidden' : 'auto',
+      display: 'flex',
+      flexDirection: 'column',
+      minHeight: 0,
+    }}>
       <div style={{
         display: 'flex', flexDirection: 'column',
         gap: isWeb ? 20 : 12,
-        padding: isWeb ? '32px 0' : 16,
-        width: '100%', maxWidth: isWeb ? 760 : 'none',
+        padding: isWeb ? '28px 0' : 16,
+        width: '100%', maxWidth: isWeb ? (useFit ? 'none' : 760) : 'none',
         margin: isWeb ? '0 auto' : 0, boxSizing: 'border-box',
         paddingLeft: isWeb ? 32 : 16, paddingRight: isWeb ? 32 : 16,
+        flex: useFit ? 1 : undefined,
       }}>
         {mainComps.map((comp, i) => {
           const el = renderComponent(comp, context);
@@ -933,14 +997,14 @@ export default function MockupRenderer({ spec, activeScreenId, onScreenChange })
     ? [{ label: '← Back', target: navBar?.props?.leading?.target || spec.screens[0]?.id }, ...webLinksBase]
     : webLinksBase;
 
-  return (
-   <PaletteCtx.Provider value={C}>
-    <AccentCtx.Provider value={accent}>
-    <RadiusCtx.Provider value={radius}>
+  const appChrome = (
     <div style={{
-      width: W, height: H, background: bg,
+      width: useFit ? fitW : W,
+      height: useFit ? fitH : H,
+      background: bg,
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
       position: 'relative', fontFamily: ff,
+      flexShrink: 0,
     }}>
       {isWeb ? (
         <>
@@ -976,6 +1040,35 @@ export default function MockupRenderer({ spec, activeScreenId, onScreenChange })
       {/* Spinner keyframe */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
+  );
+
+  return (
+   <PaletteCtx.Provider value={C}>
+    <AccentCtx.Provider value={accent}>
+    <RadiusCtx.Provider value={radius}>
+    {useFit ? (
+      <div
+        ref={fitRef}
+        style={{
+          width: '100%',
+          height: '100%',
+          overflow: 'hidden',
+          position: 'relative',
+        }}
+      >
+        <div style={{
+          width: fitW,
+          height: fitH,
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          transform: `translate(-50%, -50%) scale(${fitScale})`,
+          transformOrigin: 'center center',
+        }}>
+          {appChrome}
+        </div>
+      </div>
+    ) : appChrome}
     </RadiusCtx.Provider>
     </AccentCtx.Provider>
    </PaletteCtx.Provider>

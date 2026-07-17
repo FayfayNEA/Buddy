@@ -76,6 +76,14 @@
   --header-offset-top: 24px;
   --header-control-size: 46px;
   --app-padding: 24px;
+
+  /* Multi-mind purple cards — Image defines size; Mockup mirrors it exactly */
+  --mind-card-max-height: min(35vh, 350px);
+  --mind-card-aspect: 16 / 10;
+  --mind-grid-max-width: min(1260px, 92%);
+  --mind-grid-column-gap: 18px;
+  --mind-grid-row-gap: 26px;
+  --mind-label-row-height: 25px;
 }
 
 * {
@@ -86,6 +94,8 @@ html, body {
   overflow: hidden;
   margin: 0;
   height: 100%;
+  width: 100%;
+  overscroll-behavior: none;
 }
 
 body {
@@ -99,11 +109,10 @@ body {
 #root {
   height: 100vh;
   height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* ---------- 3-Phase Intro (Spiral → Explosion → Header) ---------- */
@@ -150,18 +159,99 @@ body {
   display: block;
 }
 
-/* App shell — centered, Apple-style */
+/* App shell — full viewport; only .app-scroll scrolls; chrome is portaled to <body> */
 .app {
   width: 100%;
-  height: 100vh;
-  height: 100dvh;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
   padding: var(--app-padding);
+  padding-bottom: 0;
   box-sizing: border-box;
   max-width: 100vw;
   overflow: hidden;
+  position: relative;
+}
+
+.app-scroll {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  display: flex;
+  justify-content: center;
+  padding-bottom: 8px;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(140, 120, 190, 0.45) transparent;
+}
+
+/* Multi-mind: lock the content area to the viewport so cards fit without page scroll */
+.app--scrollable .app-scroll {
+  overflow-y: hidden;
+}
+
+.app--scrollable .app-inner,
+.app--scrollable .app-main,
+.app--scrollable .mode-content-slot {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.app--scrollable .app-main {
+  padding-bottom: 0;
+}
+
+.app--scrollable .mode-toggle-row--chrome,
+.app--scrollable.app--mockup .mode-toggle-row--chrome {
+  margin-bottom: 10px;
+}
+
+/* Minimal scrollbar — transparent track, soft thumb only */
+.app-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.app-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-scroll::-webkit-scrollbar-thumb {
+  background: rgba(140, 120, 190, 0.4);
+  border-radius: 999px;
+}
+
+.app-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 120, 190, 0.65);
+}
+
+.app-scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.app-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Never scroll the outer shell — that would drag fixed children with it */
+.app--scrollable {
+  overflow: hidden !important;
 }
 
 .app-inner {
@@ -173,7 +263,6 @@ body {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  position: relative; /* anchor for absolute status badge at bottom-left */
 }
 
 /* Main content — top padding tuned so the mode toggle pills' vertical center
@@ -181,12 +270,24 @@ body {
 .app-main {
   width: 100%;
   padding-top: 2px;
-  padding-bottom: 100px;
+  padding-bottom: 16px;
 }
 
 .app--mockup .app-main {
-  padding-top: 2px;
-  padding-bottom: 100px;
+  padding-bottom: 16px;
+}
+
+.app--crowded-image .app-main {
+  padding-bottom: 16px;
+}
+
+.app--mockup .app-inner {
+  max-width: none;
+  width: 100%;
+}
+
+.app--mockup .mode-content-slot {
+  width: 100%;
 }
 
 .logo {
@@ -241,7 +342,7 @@ body {
   aspect-ratio: 4 / 3;
   max-height: 62vh;
   background: var(--bg-elevated);
-  border-radius: 12px;
+  border-radius: 8px;
   overflow: hidden;
   box-shadow: var(--shadow);
 }
@@ -425,6 +526,21 @@ body {
      radius here (was 38px) made the image's own curve fight the container's. */
 }
 
+.stage-media-error {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  background: rgba(15, 15, 20, 0.72);
+  color: #fca5a5;
+  font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .stage-diagram {
   width: 100%;
   height: 100%;
@@ -552,10 +668,10 @@ body {
 }
 
 .controls-meta {
-  position: absolute;
-  top: calc(100% + 10px);
-  left: 50%;
-  transform: translateX(-50%);
+  position: static;
+  top: auto;
+  left: auto;
+  transform: none;
   width: max-content;
   max-width: 90vw;
   font-size: 13px;
@@ -564,10 +680,58 @@ body {
   letter-spacing: 0.04em;
   text-align: center;
   line-height: 1.6;
+  margin-top: 2px;
 }
 
 .controls-meta a {
   text-decoration: underline;
+}
+
+.controls-meta-error {
+  color: #dc2626;
+  opacity: 1;
+  font-weight: 600;
+}
+
+.controls-meta-hint {
+  color: #a16207;
+  opacity: 0.9;
+  font-weight: 500;
+}
+
+/* Demo generation tags — 1…N slots under Start Vibing */
+.demo-tags {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.demo-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1.5px solid var(--purple-border);
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  box-sizing: border-box;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+}
+
+.demo-tag--used {
+  background: var(--purple-light);
+  border-color: transparent;
+  color: #ffffff;
+  opacity: 0.85;
 }
 
 .app--mockup .controls {
@@ -583,18 +747,28 @@ body {
   margin-top: 16px;
 }
 
-/* Commit button — aligned with header row */
-.commit-btn {
+/* Header controls — send + reset grouped on the right */
+.header-actions {
   position: fixed;
   top: var(--header-offset-top);
-  left: 4.5%;
+  right: 4.5%;
   z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Keep the row centered on the same axis even though the buttons are smaller */
+  height: var(--header-control-size);
+}
+
+/* Commit button — sits left of reset inside .header-actions */
+.commit-btn {
+  position: static;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: var(--header-control-size);
-  height: var(--header-control-size);
+  width: 40px;
+  height: 40px;
   padding: 0;
   border-radius: 9999px;
   border: none;
@@ -605,8 +779,8 @@ body {
 }
 
 .commit-btn:hover {
-  background-color: rgba(120, 90, 220, 0.55);
-  transform: translateY(-1px);
+  background-color: var(--purple-light);
+  transform: none;
 }
 
 .commit-btn:active {
@@ -620,8 +794,8 @@ body {
 
 .commit-btn img {
   display: block;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   max-width: 80%;
   max-height: 80%;
   object-fit: contain;
@@ -635,17 +809,14 @@ body {
   height: 16px;
 }
 
-/* Restart button */
+/* Restart button — far right inside .header-actions */
 .restart-btn {
-  position: fixed;
-  top: var(--header-offset-top);
-  right: 4.5%;
-  z-index: 50;
+  position: static;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--header-control-size);
-  height: var(--header-control-size);
+  width: 40px;
+  height: 40px;
   padding: 0;
   border-radius: 9999px;
   border: none;
@@ -660,7 +831,7 @@ body {
 }
 
 .restart-btn:hover {
-  background-color: rgba(120, 90, 220, 0.55);
+  background-color: var(--purple-light);
 }
 
 .restart-btn:hover svg {
@@ -736,8 +907,7 @@ body {
 }
 
 .liquid-btn:hover {
-  background-color: rgba(120, 90, 220, 0.55);
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .liquid-btn--active {
@@ -745,8 +915,8 @@ body {
 }
 
 .liquid-btn--active:hover {
-  background-color: rgba(200, 20, 20, 0.85);
-  transform: translateY(-1px);
+  background-color: rgba(220, 30, 30, 0.75);
+  transform: none;
 }
 
 .liquid-btn > * {
@@ -759,60 +929,125 @@ body {
   50% { opacity: 0.6; }
 }
 
-/* Buddy status badge — sits in the bottom bar, left-aligned with Start Vibing */
+/* Start Vibing — same layout model as Image/Mockup: in-flow flex chrome, not fixed */
 .app-bottom-bar {
-  position: fixed;
-  bottom: 4%;
-  left: 4%;
-  right: 4%;
-  z-index: 50;
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  min-height: 80px;
+  min-height: 72px;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  background: transparent;
 }
 
 .status-badge-wrapper {
-  position: absolute;
-  left: 0;
+  position: fixed;
+  z-index: 55;
+  top: 78%;
+  left: 4%;
   user-select: none;
-  cursor: grab;
-  touch-action: none;
+  pointer-events: none;
+  /* Large "hero" size while parked bottom-left */
+  --badge-icon: 80px;
+  --badge-gap: 12px;
+  --badge-font: 20px;
+}
+
+.status-badge-wrapper--docked {
+  /* Top-left dock — slightly larger than before */
+  --badge-icon: 44px;
+  --badge-gap: 0;
+  --badge-font: 11px;
+  height: var(--header-control-size);
+  display: flex;
+  align-items: center;
   pointer-events: auto;
 }
 
-.status-badge-wrapper:active {
-  cursor: grabbing;
-}
-
-/* Inner content: icon stacked above its label, both centered — crossfades on status change */
 .status-badge-inner {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: var(--badge-gap);
+  transition: gap 0.45s ease;
+  position: relative;
+}
+
+.status-badge-wrapper--docked .status-badge-inner {
+  flex-direction: row;
+  align-items: center;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  height: 100%;
 }
 
 .status-badge-label {
   display: block;
   margin: 0 auto;
-  height: 80px;
+  height: var(--badge-icon);
   width: auto;
+  transition: height 0.55s cubic-bezier(0.34, 1.1, 0.64, 1);
+}
+
+.status-badge-wrapper--docked .status-badge-label {
+  margin: 0;
+}
+
+/* Gentle spin while Buddy is generating */
+.status-badge-label--spinning {
+  animation: badge-spin 2.6s linear infinite;
+}
+
+@keyframes badge-spin {
+  to { transform: rotate(360deg); }
 }
 
 .status-text {
   display: block;
   width: 100%;
   font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 20px;
+  font-size: var(--badge-font);
   font-weight: 300;
   text-align: center;
   color: #000000;
-  /* Small optical nudge — the icon's visual mass sits slightly right of its true
-     bounding-box center (long upper-right arm), so the label is shifted left to
-     read as centered under it. */
+  line-height: 1.1;
+  white-space: nowrap;
+  transition: font-size 0.45s ease, opacity 0.2s ease, transform 0.2s ease;
+  /* Small optical nudge while stacked — the icon's visual mass sits slightly right */
   transform: translateX(-5px);
+}
+
+/* Docked: plain text on hover — no chip/outline */
+.status-badge-wrapper--docked .status-text {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: auto;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.status-badge-wrapper--docked:hover .status-text {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* ===== Walkthrough ===== */
@@ -836,7 +1071,7 @@ body {
 /* Lift highlighted element above overlay so it shows through the dim */
 .wt-step-0 .header--fixed,
 .wt-step-1 .status-badge-wrapper,
-.wt-step-2 .commit-btn,
+.wt-step-2 .header-actions,
 .wt-step-3 .restart-btn {
   z-index: 201 !important;
 }
@@ -1094,8 +1329,9 @@ body {
   transform: translateY(-2px);
 }
 
-/* ===== Wide layout for 3+ panels ===== */
-.app-inner--wide {
+/* ===== Wide layout for 3+ panels (image + mockup share the same inset) ===== */
+.app-inner--wide,
+.app--multi-mockup .app-inner {
   max-width: 100%;
   padding: 0 20px;
 }
@@ -1109,15 +1345,332 @@ body {
   justify-content: center;
 }
 
-/* For 5–6 panels, wrap into two rows of 3 */
+/* ─── IMAGE multi-mind (do not couple to mockup) ─── */
+.panels-row--2,
+.panels-row--3,
+.panels-row--4 {
+  display: grid;
+  max-width: var(--mind-grid-max-width);
+  width: 100%;
+  margin: auto;
+  column-gap: var(--mind-grid-column-gap);
+  row-gap: var(--mind-grid-row-gap);
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  align-content: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.panels-row--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto;
+}
+
+.panels-row--3,
+.panels-row--4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto auto;
+}
+
+.panels-row--4 {
+  flex-wrap: unset;
+}
+
+.panels-row--2 .speaker-panel,
+.panels-row--3 .speaker-panel,
+.panels-row--4 .speaker-panel {
+  flex: none;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.panels-row--2 .speaker-panel .speaker-label,
+.panels-row--3 .speaker-panel .speaker-label,
+.panels-row--4 .speaker-panel .speaker-label,
+.panels-row--5 .speaker-panel .speaker-label,
+.panels-row--6 .speaker-panel .speaker-label {
+  position: relative;
+  z-index: 2;
+  margin-bottom: 0;
+  flex: 0 0 auto;
+  height: var(--mind-label-row-height);
+  min-height: var(--mind-label-row-height);
+  max-height: var(--mind-label-row-height);
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Mockup multi-mind reuses Image panels-row + stage — header sits in label slot */
+.panels-row .speaker-panel > .mockup-cell-header {
+  position: relative;
+  width: 100%;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  height: var(--mind-label-row-height);
+  min-height: var(--mind-label-row-height);
+  max-height: var(--mind-label-row-height);
+  flex: 0 0 var(--mind-label-row-height);
+  z-index: 2;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Keep both views mounted; only the active layer receives input. */
+.panels-row .speaker-panel .stage > .mockup-stage-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.panels-row .speaker-panel .stage > .mockup-stage-layer--active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* Content inside the shared Image stage must fill it — never set its own size */
+.panels-row .speaker-panel .stage .mockup-stage-fill {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Website, transcript, and user flow share one footprint. */
+.panels-row .speaker-panel .stage .mockup-stage-fill--site-sized {
+  width: min(100%, calc(var(--mind-card-max-height) * var(--mock-aspect, 1.607))) !important;
+  height: 100%;
+  margin: 0 auto;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.panels-row .speaker-panel .stage .mockup-stage-layer--flow .mockup-stage-fill--site-sized {
+  overflow: auto;
+}
+
+.panels-row .speaker-panel .stage .mockup-stage-layer--website .mockup-stage-fill--site-sized {
+  background: transparent;
+}
+
+.panels-row .speaker-panel .stage .mockup-stage-fill--site-sized .flip-card-back {
+  background: var(--bg-elevated);
+  border-radius: 8px;
+}
+
+.panels-row .speaker-panel .stage .mockup-stage-fill > .flip-card-shell,
+.panels-row .speaker-panel .stage .mockup-stage-fill > .flip-card-shell .flip-card,
+.panels-row .speaker-panel .stage .mockup-stage-fill .flowchart-panel,
+.panels-row .speaker-panel .stage .mockup-stage-fill > .flip-card-shell--compact,
+.panels-row .speaker-panel .stage .mockup-stage-fill > .flip-card-shell--compact > .flip-card {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  aspect-ratio: auto !important;
+  margin: 0 !important;
+  flex: 1 1 auto !important;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.panels-row .speaker-panel .stage .mockup-stage-fill > .flip-card-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.panels-row .speaker-panel .stage .mockup-deck-nav--overlay {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  margin: 0;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 100px;
+  background: rgba(255, 255, 255, 0.22);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.panels-row .speaker-panel .stage .mockup-deck-nav--overlay .mockup-nav-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--text);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.panels-row .speaker-panel .stage .mockup-deck-nav--overlay .mockup-nav-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.32);
+  border-color: rgba(255, 255, 255, 0.6);
+  color: var(--text);
+}
+
+.panels-row .speaker-panel .stage .mockup-deck-nav--overlay .mockup-nav-label {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 40px;
+}
+
+/*
+ * Live mockup: drop the white card chrome — the generated site is the surface.
+ * The white box added visual noise and made the prototype harder to interact with.
+ */
+.panels-row .speaker-panel .stage.stage--mockup-live {
+  background: transparent;
+  box-shadow: none;
+}
+
+.panels-row .speaker-panel .stage.stage--mockup-live .flip-card-front {
+  background: transparent;
+}
+
+/*
+ * Hug the user-flow / transcript buttons to the visible edges of the generated
+ * site. The site is centered in the card at width = min(100%, cardHeight × aspect),
+ * so each gutter is half the leftover space (clamped at 0 when the site fills).
+ */
+.mockup-cell-header--hug .mockup-cell-actions--left {
+  left: max(0px, calc((100% - var(--mind-card-max-height) * var(--mock-aspect, 1.6)) / 2));
+}
+
+.mockup-cell-header--hug .mockup-cell-actions--right {
+  right: max(0px, calc((100% - var(--mind-card-max-height) * var(--mock-aspect, 1.6)) / 2));
+}
+
+.panels-row .speaker-panel .stage > .mockup-live-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 6;
+}
+
+.speaker-panel--mockup-active > .stage {
+  box-shadow: inset 0 0 0 1.5px var(--purple-border), var(--shadow);
+}
+
+.panels-row .speaker-panel .stage .mockup-generating-state,
+.panels-row .speaker-panel .stage .mockup-oops-state {
+  gap: 16px;
+}
+
+.panels-row .speaker-panel .stage .mockup-generating-state p,
+.panels-row .speaker-panel .stage .mockup-oops-state p {
+  margin: 0;
+  font-size: 15px;
+  opacity: 0.6;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.panels-row .speaker-panel .stage .mockup-spinner {
+  position: relative;
+  z-index: 1;
+}
+
+/* Image card size — same explicit height Mockup uses (no aspect shrink games) */
+.panels-row--2 .speaker-panel .stage,
+.panels-row--3 .speaker-panel .stage,
+.panels-row--4 .speaker-panel .stage,
+.panels-row--5 .speaker-panel .stage,
+.panels-row--6 .speaker-panel .stage {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 100%;
+  height: var(--mind-card-max-height);
+  min-height: var(--mind-card-max-height);
+  max-height: var(--mind-card-max-height);
+  aspect-ratio: auto;
+  flex: 0 0 auto;
+  align-self: stretch;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  box-sizing: border-box;
+}
+
+/* 5–6 image panels */
 .panels-row--5,
 .panels-row--6 {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: auto auto;
+  max-width: var(--mind-grid-max-width);
+  width: 100%;
+  margin: auto;
+  column-gap: 14px;
+  row-gap: var(--mind-grid-row-gap);
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  align-content: center;
+  flex-wrap: unset;
 }
 
 .panels-row--5 .speaker-panel,
 .panels-row--6 .speaker-panel {
-  flex: 0 0 calc(33.333% - 10px);
+  flex: none;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Start Vibing under a crowded multi-mind grid */
+.controls--under-panels {
+  margin-top: 14px;
+  margin-bottom: 12px;
+  pointer-events: auto;
+  position: relative;
+  z-index: 5;
+}
+
+.controls--under-panels .controls-meta {
+  position: static;
+  transform: none;
+  left: auto;
+  top: auto;
+  margin-top: 8px;
 }
 
 /* ===== Speaker panel ===== */
@@ -1226,7 +1779,7 @@ body {
 .panel-generating-ring {
   position: absolute;
   inset: 0;
-  border-radius: 12px;
+  border-radius: 8px;
   border: 2px solid var(--ring-color, #7c5cfc);
   pointer-events: none;
   animation: ringPulse 1.3s ease-in-out infinite;
@@ -1314,7 +1867,7 @@ body {
   animation: activePulse 1s ease-in-out infinite;
 }
 
-/* ─── Mode toggle ────────────────────────────────────────────────────────────── */
+/* ─── Mode toggle — shared Image / Mockup switch ─────────────────────────────── */
 .mode-toggle-row {
   display: flex;
   align-items: center;
@@ -1323,66 +1876,112 @@ body {
   margin-bottom: 40px;
 }
 
-.app--mockup .mode-toggle-row {
-  margin-bottom: 40px;
+/* Parked outside .app-scroll — same chrome layer as Start Vibing */
+.mode-toggle-row--chrome {
+  flex: 0 0 auto;
+  width: 100%;
+  margin-top: 4px;
+  margin-bottom: 20px;
+  position: relative;
+  z-index: 5;
 }
 
-/* Keeps Image/Mockup toggle from shifting when switching modes */
-.mode-content-slot {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
+/* Do NOT give mockup a different chrome margin — it shifts the purple cards down */
+.app--mockup .mode-toggle-row--chrome {
+  margin-bottom: 20px;
+}
+
+.mode-toggle-row--locked {
+  opacity: 0.55;
+}
+
+/* Shared track — one pill housing both options */
+.mode-toggle-switch {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
   align-items: center;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1.5px solid var(--purple-border);
+  box-sizing: border-box;
+  min-width: 220px;
+}
+
+/* Sliding active thumb */
+.mode-toggle-thumb {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  border-radius: 999px;
+  background: var(--purple-light);
+  transition: transform 0.28s cubic-bezier(0.34, 1.1, 0.64, 1);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.mode-toggle-switch--mockup .mode-toggle-thumb {
+  transform: translateX(100%);
 }
 
 .mode-toggle-pill {
-  padding: 9px 26px;
-  border-radius: 100px;
-  border: 2px solid var(--purple-border);
+  position: relative;
+  z-index: 1;
+  padding: 9px 22px;
+  border-radius: 999px;
+  border: none;
   background: transparent;
   color: var(--text);
   font-size: 15px;
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
-}
-
-.mode-toggle-pill:hover {
-  background-color: rgba(147, 114, 240, 0.14);
-  border-color: var(--purple-text);
-  color: var(--purple-text);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(124, 92, 252, 0.18);
+  transition: color 0.2s ease;
+  line-height: 1.2;
 }
 
 .mode-toggle-pill:active {
-  transform: translateY(0) scale(0.96);
+  transform: none;
   box-shadow: none;
 }
 
 .mode-toggle-pill--active {
-  background-color: var(--purple-light);
-  border-color: transparent;
+  background: transparent;
+  border: none;
   color: #fff;
+  font-weight: 500;
 }
 
 .mode-toggle-pill--active:hover {
-  background-color: rgba(120, 90, 220, 0.6);
-  border-color: transparent;
+  background: transparent;
+  border: none;
   color: #fff;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(124, 92, 252, 0.3);
+  transform: none;
+  box-shadow: none;
+}
+
+.mode-toggle-pill--active:active {
+  transform: none;
 }
 
 .mode-toggle-pill--locked {
-  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .mode-toggle-pill--locked:hover {
   transform: none;
   box-shadow: none;
+}
+
+/* Keeps Image/Mockup content from shifting when switching modes */
+.mode-content-slot {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 /* ─── Mockup mode layout ─────────────────────────────────────────────────────── */
@@ -1395,6 +1994,505 @@ body {
   gap: 56px;
   width: 100%;
   flex-wrap: wrap;
+}
+
+/* Multi-mind mockup: one image-style grid; each card toggles mockup ⇄ user flow */
+.mockup-cells-row {
+  display: grid;
+  gap: 12px 14px;
+  width: 100%;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.mockup-cells-row--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.mockup-cells-row--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.mockup-cells-row--4:not(.mockup-cells-row--web) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  gap: 10px 12px;
+}
+
+.mockup-cells-row--5,
+.mockup-cells-row--6 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+/* ─── MOCKUP multi-mind — same grid + same label→card stack as Image ─── */
+.mockup-cells-row--web {
+  display: grid;
+  max-width: var(--mind-grid-max-width);
+  width: 100%;
+  margin: auto;
+  column-gap: var(--mind-grid-column-gap);
+  row-gap: var(--mind-grid-row-gap);
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  align-content: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.mockup-cells-row--web.mockup-cells-row--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto;
+}
+
+.mockup-cells-row--web.mockup-cells-row--3,
+.mockup-cells-row--web.mockup-cells-row--4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto auto;
+}
+
+.mockup-cells-row--web.mockup-cells-row--5,
+.mockup-cells-row--web.mockup-cells-row--6 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: auto auto;
+}
+
+/* Same stack as Image speaker-panel: label row → 6px gap → card */
+.mockup-cells-row--web .mockup-phone-cell {
+  flex: none;
+  position: relative;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  height: auto !important;
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 !important;
+  background: transparent;
+  border-radius: 0;
+  box-sizing: border-box;
+  grid-template-rows: unset;
+}
+
+/* In-flow header row — same height as Image Mind label, does not push cards differently */
+.mockup-cell-header {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  height: var(--mind-label-row-height);
+  min-height: var(--mind-label-row-height);
+  max-height: var(--mind-label-row-height);
+  flex: 0 0 var(--mind-label-row-height);
+  z-index: 2;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.mockup-cell-actions {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 4;
+}
+
+.mockup-cell-actions--left {
+  left: 0;
+}
+
+.mockup-cell-actions--right {
+  right: 0;
+  left: auto;
+}
+
+.mockup-cell-header .speaker-label {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+  flex: 0 0 auto;
+  margin: 0;
+  height: var(--mind-label-row-height);
+  min-height: var(--mind-label-row-height);
+  max-height: var(--mind-label-row-height);
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+}
+
+.mockup-flow-toggle {
+  position: static;
+  transform: none;
+  padding: 0 10px;
+  height: calc(var(--mind-label-row-height) - 2px);
+  border: 1.5px solid var(--purple-border);
+  border-radius: 100px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  z-index: 4;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+}
+
+.mockup-transcript-toggle {
+  padding-inline: 10px;
+}
+
+.mockup-flow-toggle:hover {
+  background: rgba(120, 90, 220, 0.1);
+}
+
+.mockup-flow-toggle--active {
+  background: rgba(120, 90, 220, 0.15);
+}
+
+.mockup-flow-cell,
+.mockup-phone-cell {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: stretch;
+  justify-items: stretch;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-sizing: border-box;
+  gap: 6px;
+}
+
+.mockup-flow-cell--focused,
+.mockup-phone-cell--focused {
+  background: transparent;
+}
+
+/* Purple ring only while that mind is hearing / generating */
+.mockup-phone-cell--active {
+  background: transparent;
+  box-shadow: none;
+}
+
+.mockup-phone-cell--active .mockup-frame--split,
+.mockup-phone-cell--active .flip-card,
+.mockup-phone-cell--active .flowchart-panel--card {
+  box-shadow: inset 0 0 0 1.5px var(--purple-border);
+}
+
+.mockup-flow-cell .speaker-label {
+  margin-bottom: 10px;
+}
+
+.mockup-cell-header .speaker-label {
+  margin-bottom: 0;
+}
+
+.flowchart-panel--split:not(.flowchart-panel--card) {
+  width: 100%;
+  max-width: 100%;
+  max-height: min(28vh, 240px);
+  overflow: auto;
+  margin: 0;
+}
+
+/*
+ * Mockup purple cards — match Image stage box (full width, no shrink).
+ * Final lock at end of file sets the shared explicit height.
+ */
+.flowchart-panel--card,
+.mockup-frame--split,
+.mockup-cells-row--web .mockup-frame--split,
+.mockup-cells-row--web .flowchart-panel--card,
+.mockup-cells-row--web .flip-card-shell--compact .flip-card,
+.mockup-cells-row .mockup-frame.mockup-frame--split,
+.mockup-cells-row .flip-card.mind-card,
+.mockup-cells-row--web .mind-card {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: var(--mind-card-max-height) !important;
+  min-height: var(--mind-card-max-height) !important;
+  max-height: var(--mind-card-max-height) !important;
+  aspect-ratio: auto !important;
+  align-self: stretch !important;
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  border-radius: 8px;
+  box-sizing: border-box !important;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.flowchart-panel--card {
+  background: var(--bg-elevated);
+}
+
+.mockup-cells-row .mockup-frame.mockup-frame--split.mockup-frame--blobs,
+.mockup-cells-row--web .mockup-frame.mockup-frame--split.mockup-frame--blobs,
+.mockup-empty-state.mockup-frame--split,
+.mockup-generating-state.mockup-frame--split,
+.mockup-oops-state.mockup-frame--split,
+.mockup-frame--blobs {
+  background: #e9e4f8 !important;
+  overflow: hidden;
+  position: relative;
+}
+
+.mockup-frame--blobs > .mockup-spinner,
+.mockup-frame--blobs > p {
+  position: relative;
+  z-index: 1;
+}
+
+/* Mobile multi-mind (non-web): fill the cell */
+.mockup-cells-row:not(.mockup-cells-row--web) .mockup-frame--split {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto !important;
+  align-self: stretch;
+  justify-self: stretch;
+  flex: 1 1 auto;
+}
+
+/* Compact FlipCards shell */
+.flip-card-shell--compact {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  min-height: 0;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.mockup-cells-row--web .flip-card-shell--compact,
+.mockup-cells-row--web .flip-card-shell--compact.flip-card-shell--web {
+  max-width: 100%;
+  width: 100%;
+  height: auto;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+}
+
+/* Collapse the deck wrapper so layout is header → card, same as Image label → stage */
+.mockup-cells-row--web .mockup-deck {
+  display: contents;
+}
+
+/* Phone mockups (non-web): fill the cell; content scales inside */
+.mockup-cells-row:not(.mockup-cells-row--web) .flip-card-shell--compact:not(.flip-card-shell--web) {
+  justify-content: stretch;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  flex: 1 1 auto;
+}
+
+.mockup-cells-row:not(.mockup-cells-row--web) .flip-card-shell--compact:not(.flip-card-shell--web) .flip-card {
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  aspect-ratio: auto !important;
+  flex: 1 1 auto;
+}
+
+/* Web compact flip cards use the shared mockup card formula above */
+.flip-card-shell--compact.flip-card-shell--web .flip-card {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+.mockup-cells-row .mockup-deck {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  align-items: stretch;
+  justify-content: stretch;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  align-self: stretch;
+}
+
+.mockup-cells-row:not(.mockup-cells-row--web) .mockup-deck {
+  height: 100%;
+}
+
+/* Web multi-mind: remove deck from layout box so header→card matches Image */
+.mockup-cells-row--web .mockup-deck {
+  display: contents !important;
+}
+
+.mockup-cells-row--web .flip-card-shell--web {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+}
+
+.mockup-cells-row--web .flip-card-face {
+  overflow: hidden;
+}
+
+.app--multi-mockup .app-inner {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Motion wrappers around multi-mind grids must pass height through */
+.app--scrollable .mode-content-slot > *,
+.app--scrollable .panels-row,
+.app--scrollable .mockup-cells-row {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.app--scrollable .mode-content-slot [class*="panels-row"],
+.app--scrollable .mode-content-slot .mockup-cells-row {
+  height: 100%;
+}
+
+@media (max-width: 900px) {
+  .mockup-cells-row--2,
+  .mockup-cells-row--3,
+  .mockup-cells-row--5,
+  .mockup-cells-row--6 {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mockup-cells-row--web {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+  }
+
+  /* Keep 4 minds in one horizontal row — scale down, don't wrap */
+  .mockup-cells-row--4:not(.mockup-cells-row--web) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .mockup-cells-row--4 .mockup-phone-cell {
+    padding: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .mockup-cells-row:not(.mockup-cells-row--4),
+  .mockup-cells-row--web,
+  .mockup-cells-row--4 {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: none;
+    overflow-y: auto;
+    height: auto;
+    flex: none;
+  }
+
+  .app--scrollable .app-scroll {
+    overflow-y: auto;
+  }
+}
+
+/* Short viewports: allow scroll rather than crushing cards to zero */
+@media (max-height: 640px) {
+  .app--scrollable .app-scroll {
+    overflow-y: auto;
+  }
+}
+
+/* Equal split inset to the same left/right edges as the commit + reset buttons
+   (those sit at left/right: 4.5%). */
+.mockup-with-flow--web {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: stretch;
+  justify-content: stretch;
+  column-gap: 28px;
+  width: calc(100vw - 9%);
+  max-width: none;
+  margin-left: calc(4.5vw - var(--app-padding));
+  margin-right: 0;
+  padding-right: 0;
+  height: calc(100dvh - 220px);
+  min-height: 360px;
+  box-sizing: border-box;
+}
+
+.mockup-with-flow--web .flowchart-panel {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  justify-self: stretch;
+  margin-left: 0;
+  padding-left: 0;
+  overflow: auto;
+}
+
+.mockup-with-flow--web .flow-connector {
+  display: none;
+}
+
+.mockup-with-flow--web .mockup-mode-wrap,
+.mockup-with-flow--web .mockup-deck,
+.mockup-with-flow--web .flip-card-shell,
+.mockup-with-flow--web .flip-card {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.mockup-with-flow--web .mockup-mode-wrap,
+.mockup-with-flow--web .mockup-deck {
+  display: flex;
+  flex-direction: column;
+}
+
+.mockup-with-flow--web .mockup-deck {
+  flex: 1;
+  min-height: 0;
+}
+
+.mockup-with-flow--web .flip-card-shell {
+  flex: 1;
+  min-height: 0;
+}
+
+.mockup-with-flow--web .mockup-deck-nav {
+  flex-shrink: 0;
 }
 
 .flowchart-panel {
@@ -1411,12 +2509,7 @@ body {
 }
 
 .flowchart-panel-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  padding: 2px 6px 14px;
+  display: none;
 }
 
 /* Bridges the flowchart to the mockup frame so they read as one piece */
@@ -1435,6 +2528,30 @@ body {
 @media (max-width: 860px) {
   .flow-connector { display: none; }
   .flowchart-panel { width: 100%; max-width: 320px; }
+
+  .mockup-with-flow--web {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    margin-left: 0;
+    margin-right: 0;
+    padding-right: 0;
+  }
+
+  .mockup-with-flow--web .flowchart-panel {
+    width: 100%;
+    height: auto;
+    max-height: 40vh;
+  }
+
+  .mockup-with-flow--web .mockup-mode-wrap,
+  .mockup-with-flow--web .mockup-deck,
+  .mockup-with-flow--web .flip-card-shell,
+  .mockup-with-flow--web .flip-card {
+    height: auto;
+  }
 }
 
 .mockup-mode-wrap {
@@ -1456,16 +2573,15 @@ body {
   position: relative;
 }
 
-/* Empty/loading/oops placeholder frames */
-.mockup-frame {
-  width: 280px;
-  height: 520px;
-  max-width: 92vw;
-  max-height: 78vh;
-  aspect-ratio: 280 / 520;
-  border-radius: 12px;
+/* Empty/loading/oops — phone silhouette for single-mind only */
+.mockup-frame:not(.mockup-frame--split) {
+  width: min(402px, 78vw, calc((100dvh - 230px) * 402 / 874));
+  height: auto;
+  aspect-ratio: 402 / 874;
+  border-radius: 8px;
   background: var(--bg-elevated);
-  border: 1.5px solid var(--border);
+  border: none;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1474,6 +2590,32 @@ body {
   color: var(--text-secondary);
   font-size: 15px;
   font-family: inherit;
+  box-sizing: border-box;
+}
+
+/* Multi-mind empty frames need flex centering for blobs/spinner */
+.mockup-cells-row .mockup-frame.mockup-frame--split,
+.mockup-cells-row--web .mockup-frame.mockup-frame--split {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  border: none;
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-family: inherit;
+}
+
+.mockup-cells-row--web .flip-card-shell--compact {
+  width: 100% !important;
+  max-width: 100% !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  gap: 0 !important;
 }
 
 .mockup-empty-icon {
@@ -1560,20 +2702,21 @@ body {
 }
 
 /* ─── Flip card ──────────────────────────────────────────────────────────────── */
-/* Shell holds the card + its side toggle so the mockup itself stays clickable */
+/* Shell stacks the phone + transcript toggle centered underneath */
 .flip-card-shell {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: center;
   gap: 10px;
+  padding-bottom: 0;
 }
 
 .flip-card-toggle {
-  position: absolute;
-  top: 8px;
-  right: -108px;
-  width: 100px;
-  padding: 8px 10px;
+  position: static;
+  flex-shrink: 0;
+  width: auto;
+  padding: 8px 14px;
   border: 1.5px solid var(--purple-border);
   border-radius: 100px;
   background: var(--bg-elevated);
@@ -1587,37 +2730,44 @@ body {
 }
 
 .flip-card-toggle:hover {
-  background: var(--purple-light);
-  transform: translateY(-1px);
+  background: var(--bg-elevated);
+  transform: none;
 }
 
-/* Web/desktop card is too wide for a side toggle — sit it above the top-right corner */
 .flip-card-shell--web .flip-card-toggle {
-  top: -42px;
-  right: 0;
+  position: static;
 }
 
-/* On narrow viewports the phone card itself approaches full width, so a toggle sitting
-   108px to its right would run off-screen — sit it above the card instead, like the web variant. */
 @media (max-width: 480px) {
   .flip-card-toggle {
-    top: -42px;
-    right: 0;
+    position: static;
     width: auto;
   }
 }
 
 .flip-card {
-  width: 280px;
-  height: 520px;
-  max-width: 92vw;
-  max-height: 78vh;
+  width: min(402px, 78vw, calc((100dvh - 230px) * 402 / 874));
+  height: auto;
+  aspect-ratio: 402 / 874;
   perspective: 1200px;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .flip-card-shell--web .flip-card {
-  max-height: 82vh;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  aspect-ratio: auto;
+}
+
+/* Multi-mind compact cards ignore the single-mind web fill above */
+.mockup-cells-row--web .flip-card-shell--web.flip-card-shell--compact .flip-card,
+.mockup-cells-row--web .flip-card-shell--compact .flip-card {
+  height: var(--mind-card-max-height) !important;
+  max-height: var(--mind-card-max-height) !important;
+  min-height: var(--mind-card-max-height) !important;
+  aspect-ratio: auto !important;
 }
 
 .flip-card-inner {
@@ -1637,7 +2787,7 @@ body {
   inset: 0;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  border-radius: 12px;
+  border-radius: 8px;
   overflow: hidden;
 }
 
@@ -1753,38 +2903,60 @@ body {
 
 /* ─── Mobile ─────────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
+  :root {
+    --app-padding: 16px;
+  }
+
   .app {
     padding: 16px;
   }
 
+  .mode-toggle-switch {
+    min-width: 190px;
+  }
+
   .mode-toggle-pill {
-    padding: 8px 20px;
+    padding: 8px 16px;
     font-size: 14px;
   }
 
-  /* Smaller badge so it can't crowd/overlap the (also-shrunk) Start Vibing button */
-  .status-badge-label {
-    height: 48px;
+  /* Docked badge stays compact on mobile; hero size before dock is a bit smaller */
+  .status-badge-wrapper {
+    --badge-icon: 56px;
+    --badge-gap: 8px;
+    --badge-font: 14px;
   }
 
-  .status-badge-inner {
-    gap: 6px;
+  .status-badge-wrapper--docked {
+    --badge-icon: 36px;
+    --badge-gap: 0;
+    --badge-font: 10px;
   }
 
-  .status-text {
-    font-size: 14px;
+  .status-badge-wrapper--docked .status-badge-inner {
+    padding: 0;
+  }
+
+  .header-actions {
+    right: 16px;
+    gap: 8px;
   }
 
   .app-bottom-bar {
-    left: 16px;
-    right: 16px;
-    bottom: 3%;
+    left: auto;
+    right: auto;
+    bottom: auto;
     min-height: 60px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   }
 
   .liquid-btn {
     width: min(360px, 56vw);
     height: 48px;
+  }
+
+  .controls--under-panels .liquid-btn {
+    width: min(420px, 88vw);
   }
 
   .mockup-with-flow {
@@ -1805,19 +2977,178 @@ body {
     font-size: 18px;
   }
 
-  /* Reclaim vertical space on short mobile viewports — these paddings were tuned
-     for desktop and eat into the already-tight budget under 100dvh. */
+  /* Reclaim vertical space on short mobile viewports */
   .app-main,
   .app--mockup .app-main {
-    padding-bottom: 76px;
+    padding-bottom: 12px;
   }
 
   .mode-toggle-row,
-  .app--mockup .mode-toggle-row {
-    margin-bottom: 20px;
+  .mode-toggle-row--chrome {
+    margin-bottom: 12px;
+  }
+
+  .mockup-frame:not(.mockup-frame--split),
+  .flip-card-shell:not(.flip-card-shell--compact) .flip-card {
+    width: min(360px, 72vw, calc((100dvh - 210px) * 402 / 874));
   }
 
   .stage {
     max-height: 56vh;
   }
+
+  /* Mobile: one mind per column for Image + Mockup (both use panels-row) */
+  .panels-row--2,
+  .panels-row--3,
+  .panels-row--4,
+  .panels-row--5,
+  .panels-row--6 {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: none !important;
+    height: auto !important;
+    max-width: 100%;
+    align-content: start;
+    justify-content: stretch;
+    row-gap: 18px;
+    column-gap: 0;
+    overflow: visible;
+  }
+
+  .app--scrollable .mode-content-slot [class*="panels-row"] {
+    height: auto !important;
+    flex: none;
+  }
+
+  .app--scrollable .app-scroll {
+    overflow-y: auto;
+  }
+
+  /*
+   * Fit Mind label between user flow + transcript on narrow screens.
+   * Drop absolute positioning / hug offsets — use a 3-slot row instead.
+   */
+  .panels-row .speaker-panel > .mockup-cell-header,
+  .mockup-cell-header {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 6px;
+    height: auto !important;
+    min-height: var(--mind-label-row-height);
+    max-height: none !important;
+    flex: 0 0 auto !important;
+    padding: 0;
+  }
+
+  .mockup-cell-header .mockup-cell-actions {
+    position: static !important;
+    top: auto;
+    transform: none !important;
+    min-width: 0;
+  }
+
+  .mockup-cell-header .mockup-cell-actions--left {
+    left: auto !important;
+    justify-self: start;
+  }
+
+  .mockup-cell-header .mockup-cell-actions--right {
+    right: auto !important;
+    left: auto !important;
+    justify-self: end;
+  }
+
+  .mockup-cell-header--hug .mockup-cell-actions--left,
+  .mockup-cell-header--hug .mockup-cell-actions--right {
+    left: auto !important;
+    right: auto !important;
+  }
+
+  .mockup-cell-header .speaker-label {
+    justify-self: center;
+    max-width: 100%;
+    min-width: 0;
+    padding-left: 6px;
+    padding-right: 6px;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+  }
+
+  .mockup-cell-header .speaker-label-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mockup-flow-toggle,
+  .mockup-transcript-toggle {
+    padding: 0 7px;
+    font-size: 10px;
+    max-width: 100%;
+  }
+
+  /* Keep ‹ 2 / 2 › below the website — not on top of it */
+  .panels-row .speaker-panel .stage.stage--mockup-live {
+    overflow: visible;
+  }
+
+  .panels-row .speaker-panel .stage > .mockup-stage-layer {
+    overflow: hidden;
+    border-radius: 8px;
+  }
+
+  .panels-row .speaker-panel .stage .mockup-deck-nav--overlay {
+    bottom: auto;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 6;
+  }
+
+  .panels-row .speaker-panel:has(.mockup-deck-nav--overlay) {
+    padding-bottom: 36px;
+  }
+}
+
+/* ── Final lock: Image + Mockup purple cards — identical box, no divergence ── */
+.panels-row--2 .speaker-panel > .stage,
+.panels-row--3 .speaker-panel > .stage,
+.panels-row--4 .speaker-panel > .stage,
+.panels-row--5 .speaker-panel > .stage,
+.panels-row--6 .speaker-panel > .stage,
+.mockup-cells-row--web .mockup-frame.mockup-frame--split,
+.mockup-cells-row--web .flowchart-panel--card,
+.mockup-cells-row--web .flip-card.mind-card,
+.mockup-cells-row--web .flip-card-shell--compact > .flip-card,
+.mockup-cells-row--web .mind-card {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  /* Same explicit height on both — aspect-ratio was resolving shorter on mockup */
+  height: var(--mind-card-max-height) !important;
+  min-height: var(--mind-card-max-height) !important;
+  max-height: var(--mind-card-max-height) !important;
+  aspect-ratio: auto !important;
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+  align-self: stretch !important;
+  box-sizing: border-box !important;
+}
+
+/* Compact shells must stretch full cell width (never phone letterbox) */
+.mockup-cells-row--web .flip-card-shell--compact,
+.mockup-cells-row--web .flip-card-shell--compact.flip-card-shell--web {
+  width: 100% !important;
+  max-width: 100% !important;
+  align-items: stretch !important;
+}
+
+/* Do not let web flip-card "height:100% / max-height:none" blow past the lock */
+.mockup-cells-row--web .flip-card-shell--web .flip-card,
+.mockup-cells-row--web .flip-card-shell--compact .flip-card {
+  height: var(--mind-card-max-height) !important;
+  max-height: var(--mind-card-max-height) !important;
+  min-height: var(--mind-card-max-height) !important;
+  aspect-ratio: auto !important;
+  width: 100% !important;
 }
