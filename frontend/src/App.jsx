@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import RecordRTC from 'recordrtc';
-import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCcw, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import mermaid from 'mermaid';
 import MockupRenderer from './mockup/MockupRenderer';
@@ -1728,6 +1728,19 @@ export default function App() {
           <ParticipantSelector onSelect={initializeSpeakers} />
         )}
       </AnimatePresence>
+
+      {/* Contact — always available once past the intro */}
+      {introPhase === 2 && createPortal(
+        <a
+          href={`mailto:${CONTACT_EMAIL}`}
+          className="contact-btn"
+          aria-label={`Contact ${CONTACT_EMAIL}`}
+          title={CONTACT_EMAIL}
+        >
+          <Mail size={19} strokeWidth={2} />
+        </a>,
+        document.body,
+      )}
 
       {/* ── Main app ── */}
       {introPhase === 2 && participantCount !== null && (

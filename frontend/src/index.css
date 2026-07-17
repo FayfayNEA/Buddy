@@ -942,6 +942,41 @@ body {
   transition: transform 0.25s ease;
 }
 
+/* Contact — circular mail button, fixed bottom-left */
+.contact-btn {
+  position: fixed;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  left: 4.5%;
+  z-index: 55;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  color: #ffffff;
+  background-color: var(--purple-light);
+  text-decoration: none;
+  transition: background-color 0.2s ease, transform 0.15s ease;
+  box-sizing: border-box;
+}
+
+.contact-btn:hover {
+  background-color: var(--purple-light);
+  transform: translateY(-1px);
+}
+
+.contact-btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.contact-btn svg {
+  display: block;
+}
+
 /* Dial — turn to browse forward/back */
 .dial {
   position: relative;
@@ -3182,6 +3217,18 @@ body {
   .header-actions {
     right: 16px;
     gap: 8px;
+  }
+
+  .contact-btn {
+    left: 16px;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    width: 36px;
+    height: 36px;
+  }
+
+  .contact-btn svg {
+    width: 17px;
+    height: 17px;
   }
 
   .app-bottom-bar {
