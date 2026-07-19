@@ -96,6 +96,8 @@ export default function FlipCard({
           aspectRatio: '402 / 874',
         };
 
+  const isInterpretive = !!front?.props?.spec?.interpretive;
+
   const exportLabel = Array.isArray(iterations) && iterations.length > 1
     ? `Download all ${iterations.length} iterations`
     : 'Download this iteration';
@@ -107,6 +109,13 @@ export default function FlipCard({
           {/* Front: the live mockup — fully interactive, clicks go to the prototype */}
           <div className="flip-card-face flip-card-front">
             {front}
+            {/* Buddy built this off a vibe rather than an explicit UI request — say so, so
+                nobody wonders why they got a cocktail app out of "deep red, late night". */}
+            {isInterpretive && (
+              <span className="mockup-interpretive-badge" title="Built from the mood, not a direct request — keep talking to steer it">
+                interpreted
+              </span>
+            )}
           </div>
 
           {/* Back: transcript + changeLog */}

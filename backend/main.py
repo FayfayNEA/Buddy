@@ -1022,9 +1022,17 @@ CORE RULES:
    d. Set previousIterationRef to the prior iterationNumber, bump iterationNumber, and put a blunt changeLog entry like: "pivoted from music app to social feed — full rebuild of screens, theme, and navigation".
    e. Do NOT no-op a clear pivot. Do NOT "add a Facebook screen" onto a music app. The whole vibe and layout must change.
 
+9. AMBIENT INTERPRETATION — NEVER STALL ON A VIBE. Plenty of people talk at this thing without ever saying "app" or "screen": they riff on a colour, a mood, a place, a band, a memory, an object. That is NOT off-topic and it is NOT a no-op. If the speech carries ANY evocative material — a colour, a texture, a mood, a season, a genre, a place, a named thing — build a real interface out of it instead of waiting for permission.
+   a. Read the vibe, then pick a product that honestly belongs to it. "deep red, kind of velvet, late night" → a late-night listening or cocktail app, not a generic settings page. "cold, blue, glaciers" → a weather, meditation, or travel app. "my grandmother's kitchen" → a recipe app. Choose the interpretation a designer would defend, not the most literal one.
+   b. Drive the theme from what they actually said. Map the colour words to a real accent hex, the mood to light/dark, the texture to radius (velvet/soft → rounded, industrial/sharp → sharp), the energy to density. This is the part they will recognise as theirs — get it right even when the product choice is a leap.
+   c. Compose it fully per rule 5 — real screens, real content, wired flow. An interpretive iteration is a finished mockup, never a placeholder or a mood board.
+   d. Set "interpretive": true at the top level of the spec and open the changeLog with what you read and what you built, e.g. "heard deep red / velvet / late night — built a late-night listening room, wine-red accent, dark, soft corners". Say the leap out loud so they can redirect it.
+   e. Once they DO give concrete UI direction, treat it as normal iteration on what is already there (rule 6) and drop the interpretive flag. A real pivot still follows rule 8.
+   f. Only fall through to no-op when there is genuinely nothing to read — see FRINGE CASES.
+
 FRINGE CASES:
 a. CONTRADICTION/DISAGREEMENT: If speakers disagree in the same chunk, no-op — wait for resolution.
-b. OFF-TOPIC/SMALL TALK: Not about the product → no-op.
+b. OFF-TOPIC/SMALL TALK: Interpersonal noise with nothing to read — greetings, logistics, side conversation ("can you hear me", "one sec", "what did you have for lunch") → no-op. This is NARROW: if the talk carries a colour, mood, place, or any evocative image, rule 9 applies and you build something.
 c. META-COMMENTARY about the tool itself → no-op.
 d. RETRACTION/UNDO: Clear reversal → remove/revert the specific component.
 e. REFERENTIAL AMBIGUITY: "make that bigger" without clear referent → no-op.
@@ -1037,7 +1045,8 @@ k. SAME-PRODUCT RESTYLE vs PIVOT: "make it look more like Spotify" while already
 
 OUTPUT BEHAVIOR:
 - If ANY confident, resolvable change: output the full updated spec JSON with changeType "added"/"modified"/"removed" on affected components and a changeLog array.
-- If NO confident change: output exactly {"noOp": true} and nothing else.
+- If there is no explicit UI request but the speech carries evocative material: build the interpretive spec per rule 9, with "interpretive": true.
+- If NO confident change AND nothing to interpret: output exactly {"noOp": true} and nothing else.
 - Output ONLY valid JSON. No prose outside changeLog fields.
 
 JSON spec schema (this is the shape AND the richness bar — a music home screen, fully composed):
@@ -1101,12 +1110,49 @@ _MOCKUP_TYPE_ALIASES = {
 }
 
 
+# Asked for a vibe ("deep red, velvet"), the model often answers with a bare colour name
+# instead of a hex. Renderers accept CSS names, but every shade helper (darken, luminance,
+# accentLight) bails on non-hex and silently drops the derived palette — so pin them here.
+_COLOR_NAME_HEX = {
+    "red": "#E0344B", "crimson": "#DC143C", "maroon": "#7B1E2B", "burgundy": "#7B1E3E",
+    "wine": "#722F37", "pink": "#EC4899", "rose": "#F43F5E", "magenta": "#D946A6",
+    "purple": "#8B5CF6", "violet": "#7C3AED", "lavender": "#A78BFA", "indigo": "#4F46E5",
+    "blue": "#2F6FEB", "navy": "#1E3A8A", "teal": "#0D9488", "cyan": "#06B6D4",
+    "turquoise": "#14B8A6", "aqua": "#22D3EE", "mint": "#34D399",
+    "green": "#22A45D", "emerald": "#10B981", "olive": "#6B7B3A", "lime": "#65A30D",
+    "yellow": "#EAB308", "gold": "#D4A72C", "amber": "#F59E0B", "orange": "#F97316",
+    "peach": "#FB923C", "coral": "#FF6B5A", "brown": "#8B5E3C", "tan": "#C4A484",
+    "beige": "#D9C9A8", "cream": "#F3E9D2", "black": "#111113", "white": "#FFFFFF",
+    "grey": "#71717A", "gray": "#71717A", "silver": "#A1A1AA", "charcoal": "#36363B",
+}
+
+
+def _normalise_accent(theme: dict) -> None:
+    """Rewrite a named/loose accent colour to hex in place. No-op when already hex."""
+    if not isinstance(theme, dict):
+        return
+    accent = theme.get("accent")
+    if not isinstance(accent, str):
+        return
+    value = accent.strip()
+    if re.fullmatch(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})", value):
+        return
+    # "deep red", "dark slate blue" → match on the most specific known word present
+    words = re.findall(r"[a-z]+", value.lower())
+    for word in reversed(words):
+        if word in _COLOR_NAME_HEX:
+            theme["accent"] = _COLOR_NAME_HEX[word]
+            return
+
+
 def _sanitise_spec(spec: dict) -> dict:
     """Strip or remap unknown types; ensure every screen has an id; materialize
     screens referenced by navigation targets so the user-flow chart never misses
     a page the mockup can navigate to (e.g. a Search tab/target without a screen)."""
     if not isinstance(spec, dict) or spec.get("noOp") is True:
         return spec
+
+    _normalise_accent(spec.get("theme"))
 
     screens = spec.get("screens")
     if not isinstance(screens, list):

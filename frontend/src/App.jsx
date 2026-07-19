@@ -110,6 +110,22 @@ async function getMicStream() {
   throw lastErr || new Error('Microphone unavailable');
 }
 
+// StereoAudioRecorder captures through an AudioContext RecordRTC owns itself
+// (RecordRTC.Storage.AudioContextConstructor) and never resumes. We build the recorder
+// after awaiting getUserMedia — i.e. off the click gesture — so on iOS that context is
+// born suspended, onaudioprocess never fires, and every chunk comes back as a header-only
+// WAV that the size gate drops. destroy() also closes it, so a fresh suspended context
+// appears on every cut. Resuming after each construction is what makes mobile record.
+function newAudioRecorder(stream) {
+  const recorder = new RecordRTC(stream, {
+    type: 'audio', mimeType: 'audio/wav',
+    recorderType: RecordRTC.StereoAudioRecorder, numberOfAudioChannels: 1,
+  });
+  const ctx = RecordRTC.Storage?.AudioContextConstructor;
+  if (ctx?.state === 'suspended') ctx.resume().catch(() => { /* best effort */ });
+  return recorder;
+}
+
 // Fal CDN serves media with CSP: sandbox which breaks <img>/<video> hotlinking on some
 // mobile browsers. Prefer a backend proxy (strips CSP), then a blob URL, then the raw CDN URL.
 function proxiedMediaUrl(url) {
@@ -1114,10 +1130,7 @@ export default function App() {
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      recorderRef.current = new RecordRTC(stream, {
-        type: 'audio', mimeType: 'audio/wav',
-        recorderType: RecordRTC.StereoAudioRecorder, numberOfAudioChannels: 1,
-      });
+      recorderRef.current = newAudioRecorder(stream);
       recorderRef.current.startRecording();
       pitchSamplesRef.current = [];
 
@@ -1176,10 +1189,7 @@ export default function App() {
           try {
             if (streamRef.current?.active && vibeSessionIdRef.current === sessionAtCut) {
               try { recorderRef.current?.destroy?.(); } catch { /* ignore */ }
-              recorderRef.current = new RecordRTC(streamRef.current, {
-                type: 'audio', mimeType: 'audio/wav',
-                recorderType: RecordRTC.StereoAudioRecorder, numberOfAudioChannels: 1,
-              });
+              recorderRef.current = newAudioRecorder(streamRef.current);
               recorderRef.current.startRecording();
               resetChunkCounters();
             }
@@ -1242,10 +1252,7 @@ export default function App() {
             try { finishedRecorder.destroy(); } catch { /* ignore */ }
 
             if (streamRef.current?.active && vibeSessionIdRef.current === sessionAtCut) {
-              recorderRef.current = new RecordRTC(streamRef.current, {
-                type: 'audio', mimeType: 'audio/wav',
-                recorderType: RecordRTC.StereoAudioRecorder, numberOfAudioChannels: 1,
-              });
+              recorderRef.current = newAudioRecorder(streamRef.current);
               recorderRef.current.startRecording();
             }
             resetChunkCounters();
@@ -1254,10 +1261,7 @@ export default function App() {
             flashListenHintRef.current?.('Recorder glitch — keep talking');
             try {
               if (streamRef.current?.active && vibeSessionIdRef.current === sessionAtCut) {
-                recorderRef.current = new RecordRTC(streamRef.current, {
-                  type: 'audio', mimeType: 'audio/wav',
-                  recorderType: RecordRTC.StereoAudioRecorder, numberOfAudioChannels: 1,
-                });
+                recorderRef.current = newAudioRecorder(streamRef.current);
                 recorderRef.current.startRecording();
               }
             } catch { /* ignore */ }
