@@ -275,7 +275,7 @@
   @keyframes pulseIcon { 0%, 100% { opacity: 0.35; transform: scale(0.88); } 50% { opacity: 1; transform: scale(1.05); } }
   .scatter-tile.tile-loading .fi-label { opacity: 0.6; }
   .scatter-tile.tile-generated { border-color: var(--purple-deep); }
-  .scatter-tile.tile-generated .fi-label { display: none; }
+  .scatter-tile.tile-generated .fi-label { display: block; }
   .scatter-tile.tile-no-frame { background: none; border: none; box-shadow: none; }
   .scatter-tile.tile-no-frame .fi-step { color: var(--purple-deep); opacity: 0.9; }
   .gen-visual { display: flex; align-items: center; justify-content: center; }
@@ -710,16 +710,8 @@
     '<img src="landing/flowchart-mockup.png" alt="Flow diagram" class="gen-img" style="max-width:220px;max-height:150px;" />',
     // your UI mockup screenshot
     '<img src="landing/ui-mockup.png" alt="UI mockup" class="gen-img" style="width:78px;height:170px;object-fit:contain;box-shadow:none;" />',
-    // real-feeling video: a playing frame with a timestamp and an animated scrub bar
-    '<svg viewBox="0 0 140 104" width="104" height="77">'
-      + '<rect x="3" y="3" width="134" height="78" rx="10" fill="var(--bg)" stroke="var(--purple-deep)" stroke-width="2"/>'
-      + '<circle class="gen-video-pulse" cx="70" cy="42" r="18" fill="var(--purple-wash)" stroke="var(--purple-deep)" stroke-width="1.8"/>'
-      + '<path d="M64 33l16 9-16 9z" fill="var(--purple-deep)"/>'
-      + '<text x="12" y="72" font-size="8" fill="var(--purple-deep)" style="' + svgFont + '">0:12</text>'
-      + '<text x="128" y="72" font-size="8" text-anchor="end" fill="var(--ink-soft)" style="' + svgFont + '">0:45</text>'
-      + '<rect x="12" y="90" width="116" height="5" rx="2.5" fill="var(--border)"/>'
-      + '<rect class="gen-video-scrub" x="12" y="90" width="22" height="5" rx="2.5" fill="var(--purple-deep)"/>'
-      + '</svg>',
+    // real UI mockup product video
+    '<video class="gen-video" src="landing/ui-mockup-demo.mp4" autoplay muted loop playsinline></video>',
   ];
   const demoPrompt = "let's create a music app";
 
@@ -773,7 +765,9 @@
     demoRunning = true;
     resetDemo();
     const voiceEl = flow[0].el;
-    voiceEl.innerHTML = '<span class="fi-step">01</span><p class="voice-transcript">&ldquo;<span class="voice-typed"></span>&rdquo;</p>';
+    voiceEl.innerHTML = '<span class="fi-step">01</span>'
+      + '<p class="voice-transcript">&ldquo;<span class="voice-typed"></span>&rdquo;</p>'
+      + '<span class="fi-label">Voice</span>';
     const typed = voiceEl.querySelector('.voice-typed');
     typeInto(typed, demoPrompt, () => generateNext(1));
   }
