@@ -1,4 +1,5 @@
 """Password hashing + JWT issuing/verification for account login."""
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -10,6 +11,8 @@ from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
 
 from db import User, get_db
+
+logger = logging.getLogger("consensus_engine")
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRES_DAYS = 30
@@ -54,15 +57,21 @@ def _decode_token(token: str) -> int:
 def verify_google_id_token(token: str) -> str:
     """Verify a Google Identity Services credential and return the account's email.
 
-    Raises HTTPException — 503 if the server has no GOOGLE_CLIENT_ID configured yet,
+    Raises HTTPException: 503 if the server has no GOOGLE_CLIENT_ID configured yet,
     401 if the token doesn't check out (wrong audience, expired, unverified email).
     """
-    client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+    # Strip: a trailing space or newline pasted into the env var makes every token
+    # look like an audience mismatch, which is indistinguishable from a bad token.
+    client_id = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
     if not client_id:
         raise HTTPException(status_code=503, detail="Google sign-in is not configured on this server")
     try:
         idinfo = google_id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
-    except Exception:
+    except Exception as e:
+        # Log the real reason. Without this the 401 below is undiagnosable, since
+        # audience mismatch, clock skew and a malformed token all look identical.
+        logger.warning("Google token verification failed (expected aud=%r): %s: %s",
+                       client_id, type(e).__name__, e)
         raise HTTPException(status_code=401, detail="Invalid Google credential")
     email = idinfo.get("email")
     if not email or not idinfo.get("email_verified"):
