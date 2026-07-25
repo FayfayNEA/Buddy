@@ -1086,7 +1086,7 @@ body {
   align-items: flex-start;
   justify-content: center;
   overflow-y: auto;
-  padding: 48px 20px 40px;
+  padding: 24px 20px 40px;
   background: url('/images/background.jpg') center / cover no-repeat;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
 }
@@ -1101,7 +1101,7 @@ body {
 
 .login-gate-logo-link {
   display: inline-block;
-  margin-bottom: 28px;
+  margin-bottom: 14px;
   cursor: pointer;
 }
 
