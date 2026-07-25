@@ -60,7 +60,7 @@ class User(Base):
 
     # Subscription state, driven by Stripe webhooks. is_paid is the effective switch the
     # quota gate reads, so a comped account can be granted by flipping it directly.
-    is_paid = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    is_paid = Column(Boolean, nullable=False, default=False, server_default=text("0") if IS_SQLITE else text("false"))
     stripe_customer_id = Column(String, nullable=True, index=True)
     stripe_subscription_id = Column(String, nullable=True)
     subscription_status = Column(String, nullable=True)  # active | canceled | past_due | ...
