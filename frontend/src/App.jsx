@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import RecordRTC from 'recordrtc';
-import { ChevronLeft, ChevronRight, RotateCcw, Mail } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCcw, Mail, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import mermaid from 'mermaid';
 import MockupRenderer from './mockup/MockupRenderer';
@@ -13,6 +13,7 @@ import { useAuth } from './auth/useAuth';
 import SavedWorkModal from './auth/SavedWorkModal';
 import UpgradeModal from './auth/UpgradeModal';
 import LoginGate from './auth/LoginGate';
+import Sidebar from './Sidebar';
 
 mermaid.initialize({
   startOnLoad: true,
@@ -453,6 +454,7 @@ export default function App() {
   const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
   const [upgradeConfirmed, setUpgradeConfirmed] = useState(false);
   const [upgradePollDone, setUpgradePollDone] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [entered, setEntered] = useState(false);
   // Returning signed-in visitors skip the login gate entirely.
@@ -1755,7 +1757,9 @@ export default function App() {
 
   useEffect(() => {
     if (participantCount == null) {
-      badgeIntroPlayedRef.current = false;
+      // Do NOT reset badgeIntroPlayedRef here: restoreSessionSnapshot briefly nulls
+      // participantCount via resetSession() before restoring it, and that must not
+      // count as "leaving the app" and replay the drop-in intro a second time.
       setBadgeDocked(false);
       return undefined;
     }
@@ -1835,7 +1839,7 @@ export default function App() {
   const statusImageSrc = STATUS_IMAGES[displayStatus] || STATUS_IMAGES.default;
 
   return (
-    <div className={`app${appMode === 'mockup' ? ' app--mockup' : ''}${crowdedImageLayout || crowdedMockupLayout ? ' app--crowded-image' : ''}${(hasAnyHistory || crowdedImageLayout || crowdedMockupLayout) ? ' app--scrollable' : ''}${multiMockup ? ' app--multi-mockup' : ''}`}>
+    <div className={`app${appMode === 'mockup' ? ' app--mockup' : ''}${crowdedImageLayout || crowdedMockupLayout ? ' app--crowded-image' : ''}${(hasAnyHistory || crowdedImageLayout || crowdedMockupLayout) ? ' app--scrollable' : ''}${multiMockup ? ' app--multi-mockup' : ''}${sidebarOpen ? ' app--sidebar-open' : ''}`}>
 
       {/* ── Login gate: sign in, sign up, or continue as a demo guest ──
           Waits on auth.ready so a returning signed-in visitor never sees the gate
@@ -2395,7 +2399,12 @@ export default function App() {
                                   ? <span>out of generations, <button type="button" className="inline-upgrade-link" onClick={() => { setUpgradeReason(null); setShowUpgrade(true); }}>upgrade for unlimited</button></span>
                                   : <span>out of generations, <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></span>)
                               : <span>want more? <button type="button" className="inline-upgrade-link" onClick={() => setShowLoginGate(true)}>sign up free</button></span>)
-                          : `${demoUsesLeft} of ${generationLimit} generations left`}
+                          // The account tier already shows "99 / 100" in the pill above —
+                          // repeating it here as prose is redundant. Anonymous demo users
+                          // don't get that pill, so they keep the spelled-out count.
+                          : generationLimit === DEMO_LIMIT
+                            ? `${demoUsesLeft} of ${generationLimit} generations left`
+                            : ''}
                 </div>
               </div>
             </div>
@@ -2453,39 +2462,27 @@ export default function App() {
                 <button type="button" onClick={resetSession} className="restart-btn" aria-label="Reset">
                   <RotateCcw size={19} strokeWidth={2} />
                 </button>
-                {auth.ready && (auth.user ? (
-                  <>
-                    {auth.user.is_paid ? (
-                      <button type="button" onClick={auth.openBillingPortal} className="account-btn account-btn--pro" title="Manage subscription">
-                        ✦ Pro
-                      </button>
-                    ) : auth.user.billing_enabled ? (
-                      <button
-                        type="button"
-                        onClick={() => { setUpgradeReason(null); setShowUpgrade(true); }}
-                        className="account-btn account-btn--upgrade"
-                      >
-                        Upgrade
-                      </button>
-                    ) : null}
-                    <button type="button" onClick={() => setShowSavedWork(true)} className="account-btn" title={auth.user.email}>
-                      My work
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { auth.logout(); setEntered(false); }}
-                      className="account-btn"
-                      title="Sign out"
-                    >
-                      Sign out
-                    </button>
-                  </>
-                ) : (
-                  <button type="button" onClick={() => setShowLoginGate(true)} className="account-btn">
-                    Sign up
-                  </button>
-                ))}
               </div>
+
+              <button
+                type="button"
+                className="hamburger-btn"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open menu"
+              >
+                <Menu size={19} strokeWidth={2} />
+              </button>
+              <Sidebar
+                open={sidebarOpen}
+                onClose={() => setSidebarOpen(false)}
+                auth={auth}
+                contactEmail={CONTACT_EMAIL}
+                onOpenSavedWork={() => setShowSavedWork(true)}
+                onOpenUpgrade={() => { setUpgradeReason(null); setShowUpgrade(true); }}
+                onOpenPortal={auth.openBillingPortal}
+                onSignOut={() => { auth.logout(); setEntered(false); }}
+                onSignUp={() => setShowLoginGate(true)}
+              />
             </>,
             document.body,
           )}

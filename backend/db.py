@@ -58,6 +58,10 @@ class User(Base):
     # restarts freely, so in-process counters would reset and be per-instance.
     generations_used = Column(Integer, nullable=False, default=0, server_default="0")
     video_generations_used = Column(Integer, nullable=False, default=0, server_default="0")
+    # Start of the current weekly generation-quota window. generations_used resets to 0
+    # and this rolls forward whenever a request arrives after the window has elapsed —
+    # there's no cron job, the reset just happens lazily on next use.
+    quota_period_start = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Subscription state, driven by Stripe webhooks. is_paid is the effective switch the
     # quota gate reads, so a comped account can be granted by flipping it directly.
@@ -93,6 +97,7 @@ _ADDITIVE_USER_COLUMNS = [
     ("stripe_customer_id", "VARCHAR"),
     ("stripe_subscription_id", "VARCHAR"),
     ("subscription_status", "VARCHAR"),
+    ("quota_period_start", "TIMESTAMP"),
 ]
 
 

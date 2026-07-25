@@ -10,7 +10,7 @@ import time
 import uuid
 import zipfile
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 import requests
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Query, Depends
@@ -149,19 +149,42 @@ def _increment_video_demo(token: str, ip: str) -> int:
 
 
 # ── Quota gate ────────────────────────────────────────────────────────────────
-# Three tiers: anonymous (small demo), signed-in free (_ACCOUNT_LIMIT), and paid
-# (unlimited). Signed-in usage is counted in the DB; anonymous stays on the existing
-# token+IP counters. 402 is used for "you need to pay to continue" so the frontend can
-# tell it apart from the anonymous 429 ("sign up, it's free").
+# Three tiers: anonymous (small demo), signed-in free (_ACCOUNT_LIMIT per week), and
+# paid (unlimited). Signed-in usage is counted in the DB; anonymous stays on the
+# existing token+IP counters. 402 is used for "you need to pay to continue" so the
+# frontend can tell it apart from the anonymous 429 ("sign up, it's free").
 
-def _enforce_generation_quota(user, anon_uses: int) -> None:
+_QUOTA_PERIOD = timedelta(weeks=1)
+
+
+def _reset_quota_if_expired(user, db: Session) -> None:
+    """Free-tier generations are a rolling weekly allowance, not a lifetime cap.
+
+    Lazy reset: there's no scheduled job, this just runs the check on whichever
+    request happens to land after the window has elapsed.
+    """
+    now = datetime.now(timezone.utc)
+    start = user.quota_period_start
+    if start is not None:
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)  # SQLite stores naive datetimes
+        if now - start < _QUOTA_PERIOD:
+            return
+    user.generations_used = 0
+    user.quota_period_start = now
+    db.commit()
+    db.refresh(user)
+
+
+def _enforce_generation_quota(user, anon_uses: int, db: Session) -> None:
     if user is not None:
         if user.is_paid:
             return
+        _reset_quota_if_expired(user, db)
         if user.generations_used >= _ACCOUNT_LIMIT:
             raise HTTPException(
                 status_code=402,
-                detail=f"You've used all {_ACCOUNT_LIMIT} generations on the free plan. Upgrade for unlimited.",
+                detail=f"You've used all {_ACCOUNT_LIMIT} generations this week. Upgrade for unlimited.",
             )
         return
     if anon_uses >= _DEMO_LIMIT:
@@ -687,7 +710,7 @@ async def upload_audio(
     client_ip = _client_ip(request)
     account = get_user_from_request(request, db)
     resolved_token, uses_so_far = _resolve_demo_token(demo_token, client_ip)
-    _enforce_generation_quota(account, uses_so_far)
+    _enforce_generation_quota(account, uses_so_far, db)
 
     # --- A. SETUP ---
     temp_filename = "temp_voice.wav"
@@ -1158,7 +1181,7 @@ async def synthesize(
     client_ip = _client_ip(request)
     account = get_user_from_request(request, db)
     resolved_token, uses_so_far = _resolve_demo_token(demo_token, client_ip)
-    _enforce_generation_quota(account, uses_so_far)
+    _enforce_generation_quota(account, uses_so_far, db)
 
     try:
         all_histories = json.loads(histories_json)
@@ -1817,7 +1840,7 @@ async def mockup_endpoint(
     client_ip = _client_ip(request)
     account = get_user_from_request(request, db)
     resolved_token, uses_so_far = _resolve_demo_token(demo_token, client_ip)
-    _enforce_generation_quota(account, uses_so_far)
+    _enforce_generation_quota(account, uses_so_far, db)
 
     audio_bytes = await file.read()
 

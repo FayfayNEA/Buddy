@@ -176,6 +176,17 @@ body {
   max-width: 100vw;
   overflow: hidden;
   position: relative;
+  transition: margin-left 0.3s ease;
+}
+
+.app--sidebar-open {
+  margin-left: 280px;
+}
+
+@media (max-width: 480px) {
+  .app--sidebar-open {
+    margin-left: 0;
+  }
 }
 
 .app-scroll {
@@ -1106,6 +1117,7 @@ body {
 .login-gate-inner {
   width: 100%;
   max-width: 420px;
+  margin-top: -50px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1396,6 +1408,129 @@ body {
 
 .contact-btn--floating:active {
   transform: translateY(0) scale(0.97);
+}
+
+/* ── Hamburger menu + sidebar ── */
+.hamburger-btn {
+  position: fixed;
+  left: 4.5%;
+  top: 24px;
+  z-index: 210;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: var(--bg-elevated, #fff);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.hamburger-btn:hover {
+  background-color: var(--purple-light);
+}
+
+.app-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.app-sidebar-backdrop--open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 201;
+  width: 280px;
+  max-width: 82vw;
+  background: #fff;
+  box-shadow: 2px 0 24px rgba(0, 0, 0, 0.12);
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 18px;
+  box-sizing: border-box;
+}
+
+.app-sidebar--open {
+  transform: translateX(0);
+}
+
+.app-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.app-sidebar-logo {
+  height: 22px;
+  width: auto;
+}
+
+.app-sidebar-close {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+}
+
+.app-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-sidebar-link {
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 12px 10px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.app-sidebar-link:hover {
+  background: var(--purple-light);
+}
+
+.app-sidebar-link--muted {
+  color: var(--text-secondary);
+}
+
+.app-sidebar-contact {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.app-sidebar-contact:hover {
+  color: var(--text);
 }
 
 /* Dial — turn to browse forward/back */
