@@ -129,9 +129,11 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 6;
+    z-index: 3;
     width: min(600px, 90vw);
   }
+  .scatter.demo-active .hero-center { z-index: 1; }
+  .scatter.demo-active .scatter-tile { z-index: 4; }
   .hero-center.reveal {
     opacity: 0;
     transform: translate(-50%, calc(-50% + 28px));
@@ -170,6 +172,13 @@
     .scatter-tile.shown:hover {
       transform: scale(1.02) !important;
     }
+    .gen-visual { max-height: 100%; }
+    .gen-img { max-height: 110px !important; transform: none !important; }
+    .gen-video {
+      width: auto !important;
+      height: 110px !important;
+      transform: none !important;
+    }
   }
   .scatter-lines {
     position: absolute;
@@ -190,6 +199,7 @@
   }
   .scatter-tile {
     position: absolute;
+    z-index: 2;
     border-radius: 8px;
     border: 1px solid var(--border);
     background: var(--surface);
@@ -322,13 +332,12 @@
   }
   .gen-img { border-radius: 8px; object-fit: contain; }
   .gen-video {
-    width: 120px;
-    height: 168px;
+    max-width: 165px;
+    max-height: 230px;
+    width: auto;
+    height: auto;
     border-radius: 12px;
-    object-fit: cover;
-    object-position: center 18%;
-    transform: scale(1.12);
-    transform-origin: center center;
+    object-fit: contain;
     background: transparent;
     box-shadow: none;
   }
@@ -342,7 +351,7 @@
     padding: 120px 0 120px;
     background-color: var(--bg);
     background-image:
-      linear-gradient(to bottom, var(--bg) 0px, transparent 280px, transparent calc(100% - 220px), var(--bg) 100%),
+      linear-gradient(to bottom, var(--bg) 0px, transparent 420px, transparent calc(100% - 340px), var(--bg) 100%),
       url('landing/background.jpg');
     background-size: 100% 100%, cover;
     background-position: top, center;
@@ -615,8 +624,8 @@
   const scatterH = 680;
   const padX = Math.max(24, scatterW * 0.02);
   const usableW = scatterW - padX * 2;
-  const tileW = Math.min(280, usableW / 4.4);
-  const tileH = 190;
+  const tileW = Math.min(380, usableW / 3.7);
+  const tileH = 258;
   const topEdge = 50;
   const bottomEdge = scatterH - tileH - 50;
   const slots = [0, 1 / 3, 2 / 3, 1];
@@ -707,9 +716,9 @@
   const generatedVisuals = [
     null,
     // your flow-diagram mockup
-    '<img src="landing/flowchart-mockup.png" alt="Flow diagram" class="gen-img" style="max-width:220px;max-height:150px;" />',
+    '<img src="landing/flowchart-mockup.png" alt="Flow diagram" class="gen-img" style="max-width:298px;max-height:204px;" />',
     // your UI mockup screenshot
-    '<img src="landing/ui-mockup.png" alt="UI mockup" class="gen-img" style="width:78px;height:170px;object-fit:contain;box-shadow:none;" />',
+    '<img src="landing/ui-mockup.png" alt="UI mockup" class="gen-img" style="width:100px;height:218px;object-fit:contain;object-position:center top;box-shadow:none;transform:translateY(-8px);" />',
     // real UI mockup product video
     '<video class="gen-video" src="landing/ui-mockup-demo.mp4" autoplay muted loop playsinline></video>',
   ];
@@ -750,9 +759,7 @@
     setTimeout(() => {
       t.el.classList.remove('tile-loading');
       t.el.classList.add('tile-generated');
-      t.el.innerHTML = '<span class="fi-step">' + t.step.slice(0, 2) + '</span>'
-        + '<div class="gen-visual">' + generatedVisuals[i] + '</div>'
-        + '<span class="fi-label">' + t.step.replace(/^\d+\s/, '') + '</span>';
+      t.el.innerHTML = '<div class="gen-visual">' + generatedVisuals[i] + '</div>';
       const vid = t.el.querySelector('video');
       if (vid) { vid.muted = true; vid.play().catch(() => {}); }
       redrawLinesAt(i);
@@ -763,11 +770,10 @@
   function runDemo() {
     if (demoRunning) return;
     demoRunning = true;
+    scatterEl.classList.add('demo-active');
     resetDemo();
     const voiceEl = flow[0].el;
-    voiceEl.innerHTML = '<span class="fi-step">01</span>'
-      + '<p class="voice-transcript">&ldquo;<span class="voice-typed"></span>&rdquo;</p>'
-      + '<span class="fi-label">Voice</span>';
+    voiceEl.innerHTML = '<p class="voice-transcript">&ldquo;<span class="voice-typed"></span>&rdquo;</p>';
     const typed = voiceEl.querySelector('.voice-typed');
     typeInto(typed, demoPrompt, () => generateNext(1));
   }
