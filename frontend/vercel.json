@@ -1,7 +1,8 @@
 {
-  "rewrites": [
-    { "source": "/", "destination": "/landing-demo.html" },
-    { "source": "/product", "destination": "/index.html" },
-    { "source": "/product/(.*)", "destination": "/index.html" }
+  "routes": [
+    { "src": "^/$", "dest": "/landing-demo.html" },
+    { "src": "^/product/?$", "dest": "/index.html" },
+    { "handle": "filesystem" },
+    { "src": "^/product/(.*)$", "dest": "/index.html" }
   ]
 }
