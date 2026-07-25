@@ -40,6 +40,8 @@
   body {
     margin: 0;
     min-height: 100vh;
+    /* Reserve room for the fixed footer. Fallback covers the pre-measurement paint. */
+    padding-bottom: var(--footer-h, 96px);
     display: flex;
     flex-direction: column;
     background-color: var(--bg);
@@ -173,8 +175,15 @@
     .info-copy { padding: 0 20px 20px; }
   }
 
+  /* Pinned to the viewport bottom so opening an accordion never shifts it.
+     Body reserves its height below, measured at runtime into --footer-h since
+     the footer reflows to a taller stacked layout under 640px. */
   footer {
-    margin-top: auto;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
     background: var(--bg);
     border-top: 1px solid var(--border);
     padding-top: 8px;
@@ -325,6 +334,16 @@
 </footer>
 
 <script>
+  // The footer is fixed, so body must reserve exactly its height. Measured rather
+  // than hardcoded because the footer stacks taller below the 640px breakpoint.
+  function syncFooterHeight() {
+    var f = document.querySelector('footer');
+    if (f) document.documentElement.style.setProperty('--footer-h', f.offsetHeight + 'px');
+  }
+  syncFooterHeight();
+  window.addEventListener('resize', syncFooterHeight);
+  window.addEventListener('load', syncFooterHeight);
+
   function setOpen(block, open) {
     var btn = block.querySelector('.info-toggle');
     block.classList.toggle('is-open', open);

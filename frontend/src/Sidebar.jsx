@@ -135,13 +135,16 @@ export default function Sidebar({
         aria-hidden="true"
       />
       <div className={`app-sidebar${open ? ' app-sidebar--open' : ''}`}>
-        <button
-          type="button"
-          className="app-sidebar-close"
-          onClick={onClose}
-          title="Close"
-          aria-label="Close menu"
-        />
+        <div className="app-sidebar-top">
+          {auth.user?.is_paid && <span className="app-sidebar-tag">✦ Unlimited</span>}
+          <button
+            type="button"
+            className="app-sidebar-close"
+            onClick={onClose}
+            title="Close"
+            aria-label="Close menu"
+          />
+        </div>
         <nav className="app-sidebar-nav">
           {auth.user ? (
             <>
@@ -150,7 +153,7 @@ export default function Sidebar({
                 className="app-sidebar-link app-sidebar-link--accordion"
                 onClick={() => setMyWorkOpen(o => !o)}
               >
-                My work
+                My Work
                 <ChevronDown size={15} strokeWidth={2} className={`app-sidebar-chevron${myWorkOpen ? ' app-sidebar-chevron--open' : ''}`} />
               </button>
               <MyWorkAccordion
@@ -164,12 +167,9 @@ export default function Sidebar({
                 sessionsVersion={sessionsVersion}
               />
               {auth.user.is_paid ? (
-                <>
-                  <button type="button" className="app-sidebar-link" onClick={() => { onOpenPortal(); onClose(); }}>
-                    MANAGE SUBSCRIPTION
-                  </button>
-                  <span className="app-sidebar-tag">✦ Unlimited</span>
-                </>
+                <button type="button" className="app-sidebar-link" onClick={() => { onOpenPortal(); onClose(); }}>
+                  Manage Subscription
+                </button>
               ) : auth.user.billing_enabled ? (
                 <button type="button" className="app-sidebar-link" onClick={() => { onOpenUpgrade(); onClose(); }}>
                   Upgrade
