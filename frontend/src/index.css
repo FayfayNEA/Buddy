@@ -987,7 +987,7 @@ body {
 }
 
 .account-btn--upgrade {
-  background: linear-gradient(135deg, #7c5cfc, #b06bfa);
+  background: var(--purple-light);
 }
 
 .account-btn--pro {
@@ -1066,7 +1066,7 @@ body {
   margin-top: 14px;
   border: none;
   background: none;
-  color: var(--accent);
+  color: var(--text);
   font-size: 0.85rem;
   cursor: pointer;
   text-align: center;
@@ -1779,11 +1779,11 @@ body {
   font-weight: 600;
   cursor: pointer;
   color: #fff;
-  background: var(--accent);
+  background: #7c5cfc;
 }
 
 .access-notice-btn:hover {
-  background: var(--accent-hover);
+  background: #6b4bf0;
 }
 
 /* ===== Flow chart expand/magnify ===== */
