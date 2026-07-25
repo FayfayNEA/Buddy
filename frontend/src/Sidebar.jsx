@@ -160,9 +160,12 @@ export default function Sidebar({
                 onClose={onClose}
               />
               {auth.user.is_paid ? (
-                <button type="button" className="app-sidebar-link" onClick={() => { onOpenPortal(); onClose(); }}>
-                  ✦ Pro, manage subscription
-                </button>
+                <>
+                  <button type="button" className="app-sidebar-link" onClick={() => { onOpenPortal(); onClose(); }}>
+                    MANAGE SUBSCRIPTION
+                  </button>
+                  <span className="app-sidebar-tag">✦ Unlimited</span>
+                </>
               ) : auth.user.billing_enabled ? (
                 <button type="button" className="app-sidebar-link" onClick={() => { onOpenUpgrade(); onClose(); }}>
                   Upgrade

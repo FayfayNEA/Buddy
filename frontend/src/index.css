@@ -1006,17 +1006,6 @@ body {
   border: 1px solid var(--border, #e5e5ea);
 }
 
-.unlimited-badge {
-  display: inline-block;
-  margin-top: 8px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  padding: 4px 12px;
-  border-radius: 9999px;
-  color: #fff;
-  background: linear-gradient(135deg, #7c5cfc, #b06bfa);
-}
-
 .inline-upgrade-link {
   border: none;
   background: none;
@@ -1411,6 +1400,18 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Entitlement tag sitting under Manage subscription */
+.app-sidebar-tag {
+  align-self: flex-start;
+  margin: -2px 0 6px 10px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #7c5cfc, #b06bfa);
 }
 
 .app-sidebar-accordion {

@@ -2342,11 +2342,9 @@ export default function App() {
                 <div className="controls-tags-row">
                   {/* Numbered pills only make sense for the tiny anonymous allowance —
                       an account has 100, so it gets a plain count instead. */}
-                  {unlimited ? (
-                    <div className="demo-tags demo-tags--unlimited" aria-label="Unlimited generations">
-                      <span className="unlimited-badge">✦ Unlimited</span>
-                    </div>
-                  ) : generationLimit === DEMO_LIMIT ? (
+                  {/* Paid accounts show nothing here — the "✦ Unlimited" tag lives in
+                      the sidebar under Manage subscription instead. */}
+                  {unlimited ? null : generationLimit === DEMO_LIMIT ? (
                     <div className="demo-tags" aria-label={`${demoUsesLeft} of ${DEMO_LIMIT} generations left`}>
                       {Array.from({ length: DEMO_LIMIT }).map((_, i) => {
                         const used = i < totalUsed;
