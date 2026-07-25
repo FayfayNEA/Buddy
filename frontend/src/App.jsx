@@ -450,6 +450,9 @@ export default function App() {
   const auth = useAuth(API_BASE);
   const [showLoginGate, setShowLoginGate] = useState(false);
   const [showSavedWork, setShowSavedWork] = useState(false);
+  const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
+  const [upgradeConfirmed, setUpgradeConfirmed] = useState(false);
+  const [upgradePollDone, setUpgradePollDone] = useState(false);
 
   const [entered, setEntered] = useState(false);
   // Returning signed-in visitors skip the login gate entirely.
@@ -673,20 +676,31 @@ export default function App() {
   }, [auth.user, auth.ready]);
 
   // Coming back from Stripe checkout: the webhook may land a moment after the redirect,
-  // so re-check the account a couple of times before giving up.
+  // so re-check the account a couple of times before giving up. A visible confirmation
+  // screen covers that gap — the redirect alone gave no sign the payment went through.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (!params.get('upgraded')) return;
     window.history.replaceState({}, '', window.location.pathname);
+    setShowUpgradeSuccess(true);
+    setUpgradeConfirmed(false);
+    setUpgradePollDone(false);
     let tries = 0;
     const poll = setInterval(async () => {
       tries += 1;
       await auth.refreshUser();
-      if (tries >= 5) clearInterval(poll);
+      if (tries >= 5) {
+        clearInterval(poll);
+        setUpgradePollDone(true);
+      }
     }, 1500);
     return () => clearInterval(poll);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.ready]);
+
+  useEffect(() => {
+    if (showUpgradeSuccess && auth.user?.is_paid) setUpgradeConfirmed(true);
+  }, [showUpgradeSuccess, auth.user?.is_paid]);
 
   /** Handle a quota rejection. Returns true if it was one (caller should stop). */
   const handleQuotaError = (err) => {
@@ -2483,6 +2497,52 @@ export default function App() {
                 reason={upgradeReason}
                 onClose={() => setShowUpgrade(false)}
               />,
+              document.body,
+            )
+          )}
+          {showUpgradeSuccess && (
+            createPortal(
+              <div className="access-notice-backdrop" onClick={() => upgradeConfirmed && setShowUpgradeSuccess(false)}>
+                <div className="access-notice-card" onClick={(e) => e.stopPropagation()}>
+                  {upgradeConfirmed ? (
+                    <>
+                      <h2 className="access-notice-title">You're upgraded</h2>
+                      <p className="access-notice-body">
+                        Payment confirmed. Unlimited generations and unlimited video are unlocked on your account.
+                      </p>
+                      <button
+                        type="button"
+                        className="access-notice-btn"
+                        onClick={() => setShowUpgradeSuccess(false)}
+                      >
+                        Continue
+                      </button>
+                    </>
+                  ) : upgradePollDone ? (
+                    <>
+                      <h2 className="access-notice-title">Payment received</h2>
+                      <p className="access-notice-body">
+                        Stripe confirmed the payment. Your account is still finishing setup, this can take a few
+                        extra seconds. Refresh in a moment if "Unlimited" doesn't show up yet.
+                      </p>
+                      <button
+                        type="button"
+                        className="access-notice-btn"
+                        onClick={() => setShowUpgradeSuccess(false)}
+                      >
+                        Continue
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <h2 className="access-notice-title">Confirming your upgrade…</h2>
+                      <p className="access-notice-body">
+                        Checking in with Stripe. This only takes a moment.
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>,
               document.body,
             )
           )}
