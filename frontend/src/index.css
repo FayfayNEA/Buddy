@@ -1089,7 +1089,9 @@ body {
   align-items: flex-start;
   justify-content: center;
   overflow-y: auto;
-  padding: 24px 20px 40px;
+  /* Top offset scales with viewport height, clamped so the card still fits on
+     short screens (the gate scrolls if it ever doesn't). */
+  padding: clamp(32px, 18vh, 170px) 20px 40px;
   background: url('/images/background.jpg') center / cover no-repeat;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
 }
@@ -1097,7 +1099,6 @@ body {
 .login-gate-inner {
   width: 100%;
   max-width: 420px;
-  margin-top: -50px;
   display: flex;
   flex-direction: column;
   align-items: center;
