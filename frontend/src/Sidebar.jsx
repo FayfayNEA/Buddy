@@ -132,6 +132,13 @@ export default function Sidebar({
         aria-hidden="true"
       />
       <div className={`app-sidebar${open ? ' app-sidebar--open' : ''}`}>
+        <button
+          type="button"
+          className="app-sidebar-close"
+          onClick={onClose}
+          title="Close"
+          aria-label="Close menu"
+        />
         <nav className="app-sidebar-nav">
           {auth.user ? (
             <>
@@ -154,7 +161,7 @@ export default function Sidebar({
               />
               {auth.user.is_paid ? (
                 <button type="button" className="app-sidebar-link" onClick={() => { onOpenPortal(); onClose(); }}>
-                  ✦ Pro — manage subscription
+                  ✦ Pro, manage subscription
                 </button>
               ) : auth.user.billing_enabled ? (
                 <button type="button" className="app-sidebar-link" onClick={() => { onOpenUpgrade(); onClose(); }}>

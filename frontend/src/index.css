@@ -1115,11 +1115,15 @@ body {
 }
 
 .login-gate-logo-link {
-  display: inline-block;
-  /* margin-top + margin-bottom sum to the same 14px as before — this shifts the
-     logo down inside that space without moving the card below it. */
-  margin-top: 10px;
-  margin-bottom: 4px;
+  display: block;
+  /* buddyname.svg's viewBox is a 230x230 square but the wordmark glyph only
+     occupies a ~47px-tall band around its vertical center — the rest is baked-in
+     transparent padding. A plain margin can't remove that, so this crops it: fixed
+     height + overflow:hidden on the link, the oversized img shifted up beneath it. */
+  width: 220px;
+  height: 56px;
+  margin: 14px auto;
+  overflow: hidden;
   cursor: pointer;
 }
 
@@ -1127,6 +1131,7 @@ body {
   width: 220px;
   max-width: 60vw;
   height: auto;
+  margin-top: -80px;
   filter: brightness(0) invert(1);
 }
 
@@ -1341,6 +1346,24 @@ body {
 
 .app-sidebar--open {
   transform: translateX(0);
+}
+
+.app-sidebar-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: none;
+  background: #ff5f57;
+  cursor: pointer;
+  padding: 0;
+  transition: filter 0.15s;
+}
+
+.app-sidebar-close:hover {
+  filter: brightness(0.9);
 }
 
 .app-sidebar-nav {

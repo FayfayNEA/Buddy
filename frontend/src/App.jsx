@@ -1521,7 +1521,11 @@ export default function App() {
     setActiveSpeaker(null);
     setSpeaking(false);
     setMockupOutcome(null);
-    setBadgeDocked(false);
+    // badgeDocked is NOT reset here — the badge-docking effect (keyed on
+    // participantCount) already handles this. Setting it here directly caused a
+    // real, visible flash: restoreSessionSnapshot calls resetSession() then
+    // immediately restores participantCount, and this line forced one committed
+    // render with the badge undocked in between, before the effect re-docked it.
     setBadgeLeftPx(null);
     setListenHint(null);
     setMicError(null);
