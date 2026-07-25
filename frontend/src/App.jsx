@@ -2445,7 +2445,12 @@ export default function App() {
                     <button type="button" onClick={() => setShowSavedWork(true)} className="account-btn" title={auth.user.email}>
                       My work
                     </button>
-                    <button type="button" onClick={auth.logout} className="account-btn" title="Sign out">
+                    <button
+                      type="button"
+                      onClick={() => { auth.logout(); setEntered(false); }}
+                      className="account-btn"
+                      title="Sign out"
+                    >
                       Sign out
                     </button>
                   </>

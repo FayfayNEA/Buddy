@@ -992,8 +992,8 @@ body {
 
 .account-btn--pro {
   background: transparent;
-  color: var(--accent);
-  border: 1px solid var(--accent);
+  color: var(--purple-text);
+  border: 1px solid var(--purple-border);
 }
 
 /* Compact quota readout for signed-in accounts (100 numbered pills would be absurd) */
