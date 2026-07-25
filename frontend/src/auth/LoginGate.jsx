@@ -59,7 +59,7 @@ function GoogleButton({ auth, onSuccess, onError }) {
   );
 }
 
-export default function LoginGate({ auth, onEnter }) {
+export default function LoginGate({ auth, onEnter, onDemo, onCancel }) {
   const [mode, setMode] = useState('login'); // 'login' | 'signup'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -83,6 +83,9 @@ export default function LoginGate({ auth, onEnter }) {
 
   return (
     <div className="login-gate">
+      {onCancel && (
+        <button type="button" className="login-gate-close" onClick={onCancel} aria-label="Close">×</button>
+      )}
       <div className="login-gate-inner">
         <img src="/images/buddyname.svg" alt="Buddy" className="login-gate-logo" />
 
@@ -150,9 +153,11 @@ export default function LoginGate({ auth, onEnter }) {
           </form>
         </div>
 
-        <button type="button" className="login-demo-link" onClick={onEnter}>
-          Try the demo instead — no account needed
-        </button>
+        {onDemo && (
+          <button type="button" className="login-demo-link" onClick={onDemo}>
+            Try the demo instead — no account needed
+          </button>
+        )}
 
         <a href="/" className="login-back-link">← Back to Home</a>
       </div>

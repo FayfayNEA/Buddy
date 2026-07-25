@@ -10,7 +10,6 @@ import FlipCard from './mockup/FlipCard';
 import FlowChart from './mockup/FlowChart';
 import MockupErrorBoundary from './mockup/ErrorBoundary';
 import { useAuth } from './auth/useAuth';
-import AuthModal from './auth/AuthModal';
 import SavedWorkModal from './auth/SavedWorkModal';
 import UpgradeModal from './auth/UpgradeModal';
 import LoginGate from './auth/LoginGate';
@@ -449,7 +448,7 @@ function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, sta
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const auth = useAuth(API_BASE);
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showLoginGate, setShowLoginGate] = useState(false);
   const [showSavedWork, setShowSavedWork] = useState(false);
 
   const [entered, setEntered] = useState(false);
@@ -1817,9 +1816,19 @@ export default function App() {
           flash before the stored token is confirmed valid. */}
       <AnimatePresence>
         {auth.ready && !entered && (
-          <LoginGate auth={auth} onEnter={() => setEntered(true)} />
+          <LoginGate auth={auth} onEnter={() => setEntered(true)} onDemo={() => setEntered(true)} />
         )}
       </AnimatePresence>
+
+      {/* Sign-in triggered from inside the app (header button, "sign up free" prompt) —
+          same full-page gate, but dismissible since a demo session is already underway. */}
+      {showLoginGate && (
+        <LoginGate
+          auth={auth}
+          onEnter={() => setShowLoginGate(false)}
+          onCancel={() => setShowLoginGate(false)}
+        />
+      )}
 
       {/* ── Participant selector ── */}
       <AnimatePresence>
@@ -2359,7 +2368,7 @@ export default function App() {
                               ? (auth.user.billing_enabled
                                   ? <span>out of generations — <button type="button" className="inline-upgrade-link" onClick={() => { setUpgradeReason(null); setShowUpgrade(true); }}>upgrade for unlimited</button></span>
                                   : <span>out of generations — <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></span>)
-                              : <span>want more? <button type="button" className="inline-upgrade-link" onClick={() => setShowAuthModal(true)}>sign up free</button></span>)
+                              : <span>want more? <button type="button" className="inline-upgrade-link" onClick={() => setShowLoginGate(true)}>sign up free</button></span>)
                           : `${demoUsesLeft} of ${generationLimit} generations left`}
                 </div>
               </div>
@@ -2441,7 +2450,7 @@ export default function App() {
                     </button>
                   </>
                 ) : (
-                  <button type="button" onClick={() => setShowAuthModal(true)} className="account-btn">
+                  <button type="button" onClick={() => setShowLoginGate(true)} className="account-btn">
                     Sign in
                   </button>
                 ))}
@@ -2450,9 +2459,6 @@ export default function App() {
             document.body,
           )}
 
-          {showAuthModal && (
-            createPortal(<AuthModal auth={auth} onClose={() => setShowAuthModal(false)} />, document.body)
-          )}
           {showUpgrade && (
             createPortal(
               <UpgradeModal

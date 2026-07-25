@@ -627,8 +627,8 @@
   const tileH = 258;
   const topEdge = 50;
   const bottomEdge = scatterH - tileH - 50;
-  const slots = [0, 1 / 3, 2 / 3, 1];
-  const labels = ['01 Voice', '02 Flow Diagram', '03 UI Mockup', '04 Product Video'];
+  const slots = [0, 0.5, 1];
+  const labels = ['01 Voice', '02 Flow Diagram', '03 UI Mockup'];
   const flow = slots.map((f, i) => ({
     w: tileW,
     h: tileH,
@@ -660,7 +660,6 @@
     '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M9 22h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
     '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.7"/><rect x="15" y="3" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.7"/><rect x="9" y="15" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.7"/><path d="M6 9v3a3 3 0 0 0 3 3M18 9v3a3 3 0 0 1-3 3" stroke="currentColor" stroke-width="1.7"/></svg>',
     '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="6" y="2" width="12" height="20" rx="2.5" stroke="currentColor" stroke-width="1.7"/><path d="M10 19h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
-    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M8 5v14l11-7L8 5Z" fill="currentColor"/></svg>',
   ];
   flow.forEach((t, i) => {
     const el = document.createElement('div');
@@ -710,7 +709,7 @@
     el.addEventListener('pointercancel', () => { dragging = false; });
   });
 
-  // click-to-demo: the voice tile types a prompt, then the flow diagram, mockup, and video "generate" in turn
+  // click-to-demo: the voice tile types a prompt, then the flow diagram and mockup "generate" in turn
 
   const generatedVisuals = [
     null,
@@ -718,8 +717,6 @@
     '<img src="landing/flowchart-mockup.png" alt="Flow diagram" class="gen-img" style="max-width:298px;max-height:204px;" />',
     // your UI mockup screenshot
     '<img src="landing/ui-mockup.png" alt="UI mockup" class="gen-img" style="width:100px;height:218px;object-fit:contain;object-position:center top;box-shadow:none;transform:translateY(-8px);" />',
-    // real UI mockup product video
-    '<video class="gen-video" src="landing/ui-mockup-demo.mp4" autoplay muted loop playsinline></video>',
   ];
   const demoPrompt = "let's create a music app";
 
