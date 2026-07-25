@@ -33,7 +33,7 @@ load_dotenv()
 
 # db/auth read DATABASE_URL/JWT_SECRET at import time, so .env must already be loaded above.
 from db import init_db, get_db, User, SavedSession, IS_SQLITE
-from auth import hash_password, verify_password, create_token, get_current_user, get_user_from_request
+from auth import hash_password, verify_password, create_token, get_current_user, get_user_from_request, verify_google_id_token
 import billing
 
 # Normalize secret env vars — .env files often pick up accidental leading/trailing spaces
@@ -345,6 +345,10 @@ class LoginBody(BaseModel):
     password: str
 
 
+class GoogleAuthBody(BaseModel):
+    id_token: str
+
+
 class SaveSessionBody(BaseModel):
     title: str = "Untitled session"
     data: dict
@@ -383,8 +387,24 @@ def signup(body: SignupBody, db: Session = Depends(get_db)):
 def login(body: LoginBody, db: Session = Depends(get_db)):
     email = body.email.strip().lower()
     user = db.query(User).filter(User.email == email).first()
-    if not user or not verify_password(body.password, user.password_hash):
+    if not user:
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    if not user.password_hash:
+        raise HTTPException(status_code=400, detail="This account uses Google sign-in. Use 'Continue with Google' instead.")
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    return {"token": create_token(user.id), "user": _user_public(user)}
+
+
+@app.post("/auth/google")
+def google_auth(body: GoogleAuthBody, db: Session = Depends(get_db)):
+    email = verify_google_id_token(body.id_token)
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(email=email, password_hash=None)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
     return {"token": create_token(user.id), "user": _user_public(user)}
 
 

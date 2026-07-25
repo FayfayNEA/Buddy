@@ -13,6 +13,7 @@ import { useAuth } from './auth/useAuth';
 import AuthModal from './auth/AuthModal';
 import SavedWorkModal from './auth/SavedWorkModal';
 import UpgradeModal from './auth/UpgradeModal';
+import LoginGate from './auth/LoginGate';
 
 mermaid.initialize({
   startOnLoad: true,
@@ -451,7 +452,11 @@ export default function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSavedWork, setShowSavedWork] = useState(false);
 
-  const [introPhase, setIntroPhase] = useState(0);
+  const [entered, setEntered] = useState(false);
+  // Returning signed-in visitors skip the login gate entirely.
+  useEffect(() => {
+    if (auth.ready && auth.user) setEntered(true);
+  }, [auth.ready, auth.user]);
   const [vibeMode, setVibeMode] = useState(false);
   const vibeModeRef = useRef(false);
   useEffect(() => { vibeModeRef.current = vibeMode; }, [vibeMode]);
@@ -734,12 +739,6 @@ export default function App() {
     isSpeakingRef.current = on;
     setIsSpeaking(on);
   };
-
-  // Intro timing
-  useEffect(() => {
-    if (introPhase === 0) { const t = setTimeout(() => setIntroPhase(1), 1500); return () => clearTimeout(t); }
-    if (introPhase === 1) { const t = setTimeout(() => setIntroPhase(2), 800); return () => clearTimeout(t); }
-  }, [introPhase]);
 
   // Global safety net: a stray unhandled rejection (e.g. an aborted fetch) must never
   // take down the whole session. Swallow it and let the per-request recovery handle state.
@@ -1813,37 +1812,22 @@ export default function App() {
   return (
     <div className={`app${appMode === 'mockup' ? ' app--mockup' : ''}${crowdedImageLayout || crowdedMockupLayout ? ' app--crowded-image' : ''}${(hasAnyHistory || crowdedImageLayout || crowdedMockupLayout) ? ' app--scrollable' : ''}${multiMockup ? ' app--multi-mockup' : ''}`}>
 
-      {/* ── Phase 0: Spiral ── */}
-      <AnimatePresence mode="wait">
-        {introPhase === 0 && (
-          <motion.div key="p0" initial={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} className="intro-overlay intro-overlay--white">
-            <motion.div initial={{ scale: 5, opacity: 1, rotate: 0 }} animate={{ scale: 0, opacity: 0, rotate: 360 }} transition={{ duration: 1.5, ease: 'easeInOut' }} className="intro-spiral-wrapper">
-              <img src="/images/buddyname.svg" alt="" className="intro-spiral-svg" />
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Phase 1: Explosion ── */}
-      <AnimatePresence mode="wait">
-        {introPhase === 1 && (
-          <motion.div key="p1" initial={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5, ease: 'easeOut' }} className="intro-overlay intro-overlay--white">
-            <motion.div layoutId="buddy-logo" initial={{ scale: 0 }} animate={{ scale: 5 }} transition={{ duration: 0.4, ease: 'easeOut' }} className="intro-explosion-wrapper">
-              <img src="/images/Mask group.svg" alt="" className="intro-mask-svg" />
-            </motion.div>
-          </motion.div>
+      {/* ── Login gate: sign in, sign up, or continue as a demo guest ── */}
+      <AnimatePresence>
+        {!entered && (
+          <LoginGate auth={auth} onEnter={() => setEntered(true)} />
         )}
       </AnimatePresence>
 
       {/* ── Participant selector ── */}
       <AnimatePresence>
-        {introPhase === 2 && participantCount === null && (
+        {entered && participantCount === null && (
           <ParticipantSelector onSelect={initializeSpeakers} />
         )}
       </AnimatePresence>
 
       {/* Contact on the mind-picker screen (main session puts it beside 1–5) */}
-      {introPhase === 2 && participantCount === null && createPortal(
+      {entered && participantCount === null && createPortal(
         <a
           href={`mailto:${CONTACT_EMAIL}`}
           className="contact-btn contact-btn--floating"
@@ -1856,7 +1840,7 @@ export default function App() {
       )}
 
       {/* ── Main app ── */}
-      {introPhase === 2 && participantCount !== null && (
+      {entered && participantCount !== null && (
         <>
           {/* Mode toggle — shared on/off switch for Image ↔ Mockup */}
           <div className={`mode-toggle-row mode-toggle-row--chrome${vibeMode ? ' mode-toggle-row--locked' : ''}`}>

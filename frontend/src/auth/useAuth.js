@@ -45,6 +45,11 @@ export function useAuth(apiBase) {
     _applyAuth(res.data);
   }, [apiBase]);
 
+  const loginWithGoogle = useCallback(async (idToken) => {
+    const res = await axios.post(`${apiBase}/auth/google`, { id_token: idToken });
+    _applyAuth(res.data);
+  }, [apiBase]);
+
   const logout = useCallback(() => {
     setToken('');
     setUser(null);
@@ -83,5 +88,5 @@ export function useAuth(apiBase) {
     }
   }, [token, apiBase]);
 
-  return { user, token, ready, authHeaders, signup, login, logout, refreshUser, startCheckout, openBillingPortal };
+  return { user, token, ready, authHeaders, signup, login, loginWithGoogle, logout, refreshUser, startCheckout, openBillingPortal };
 }

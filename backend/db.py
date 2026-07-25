@@ -50,7 +50,8 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
-    password_hash = Column(String, nullable=False)
+    # Nullable: Google-signed-in accounts never set a password.
+    password_hash = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Quota counters live in the DB, not memory: Cloud Run runs several instances and
@@ -99,14 +100,20 @@ def _add_missing_columns():
     inspector = inspect(engine)
     if "users" not in inspector.get_table_names():
         return  # create_all just made it with every column
-    existing = {c["name"] for c in inspector.get_columns("users")}
+    columns = {c["name"]: c for c in inspector.get_columns("users")}
     with engine.begin() as conn:
         for name, ddl in _ADDITIVE_USER_COLUMNS:
-            if name in existing:
+            if name in columns:
                 continue
             # SQLite spells the boolean default differently to Postgres
             sql = ddl.replace("FALSE", "0") if IS_SQLITE else ddl
             conn.execute(text(f"ALTER TABLE users ADD COLUMN {name} {sql}"))
+        # Databases created before Google sign-in still have password_hash NOT NULL.
+        # SQLite can't drop a column constraint without a table rebuild — skip there,
+        # since local dev DBs are disposable (buddy.db is gitignored).
+        pw_col = columns.get("password_hash")
+        if pw_col is not None and not pw_col.get("nullable", True) and not IS_SQLITE:
+            conn.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))
 
 
 def init_db():

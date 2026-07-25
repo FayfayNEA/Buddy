@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, Request
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
 
 from db import User, get_db
@@ -47,6 +49,25 @@ def _decode_token(token: str) -> int:
         return int(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+
+def verify_google_id_token(token: str) -> str:
+    """Verify a Google Identity Services credential and return the account's email.
+
+    Raises HTTPException — 503 if the server has no GOOGLE_CLIENT_ID configured yet,
+    401 if the token doesn't check out (wrong audience, expired, unverified email).
+    """
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+    if not client_id:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured on this server")
+    try:
+        idinfo = google_id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Google credential")
+    email = idinfo.get("email")
+    if not email or not idinfo.get("email_verified"):
+        raise HTTPException(status_code=401, detail="Google account has no verified email")
+    return email.strip().lower()
 
 
 def get_user_from_request(request: Request, db: Session):
