@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import RecordRTC from 'recordrtc';
-import { ChevronLeft, ChevronRight, RotateCcw, Mail, Menu } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCcw, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import mermaid from 'mermaid';
 import MockupRenderer from './mockup/MockupRenderer';
@@ -10,7 +10,6 @@ import FlipCard from './mockup/FlipCard';
 import FlowChart from './mockup/FlowChart';
 import MockupErrorBoundary from './mockup/ErrorBoundary';
 import { useAuth } from './auth/useAuth';
-import SavedWorkModal from './auth/SavedWorkModal';
 import UpgradeModal from './auth/UpgradeModal';
 import LoginGate from './auth/LoginGate';
 import Sidebar from './Sidebar';
@@ -450,7 +449,6 @@ function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, sta
 export default function App() {
   const auth = useAuth(API_BASE);
   const [showLoginGate, setShowLoginGate] = useState(false);
-  const [showSavedWork, setShowSavedWork] = useState(false);
   const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
   const [upgradeConfirmed, setUpgradeConfirmed] = useState(false);
   const [upgradePollDone, setUpgradePollDone] = useState(false);
@@ -1839,7 +1837,7 @@ export default function App() {
   const statusImageSrc = STATUS_IMAGES[displayStatus] || STATUS_IMAGES.default;
 
   return (
-    <div className={`app${appMode === 'mockup' ? ' app--mockup' : ''}${crowdedImageLayout || crowdedMockupLayout ? ' app--crowded-image' : ''}${(hasAnyHistory || crowdedImageLayout || crowdedMockupLayout) ? ' app--scrollable' : ''}${multiMockup ? ' app--multi-mockup' : ''}${sidebarOpen ? ' app--sidebar-open' : ''}`}>
+    <div className={`app${appMode === 'mockup' ? ' app--mockup' : ''}${crowdedImageLayout || crowdedMockupLayout ? ' app--crowded-image' : ''}${(hasAnyHistory || crowdedImageLayout || crowdedMockupLayout) ? ' app--scrollable' : ''}${multiMockup ? ' app--multi-mockup' : ''}`}>
 
       {/* ── Login gate: sign in, sign up, or continue as a demo guest ──
           Waits on auth.ready so a returning signed-in visitor never sees the gate
@@ -1866,19 +1864,6 @@ export default function App() {
           <ParticipantSelector onSelect={initializeSpeakers} />
         )}
       </AnimatePresence>
-
-      {/* Contact on the mind-picker screen (main session puts it beside 1–5) */}
-      {entered && participantCount === null && createPortal(
-        <a
-          href={`mailto:${CONTACT_EMAIL}`}
-          className="contact-btn contact-btn--floating"
-          aria-label={`Contact ${CONTACT_EMAIL}`}
-          title={CONTACT_EMAIL}
-        >
-          <Mail size={19} strokeWidth={2} />
-        </a>,
-        document.body,
-      )}
 
       {/* ── Main app ── */}
       {entered && participantCount !== null && (
@@ -2351,14 +2336,6 @@ export default function App() {
               <div className="controls-inner">
                 <LiquidButton active={vibeMode} onClick={toggleVibe} demoComplete={!unlimited && demoUsesLeft === 0} />
                 <div className="controls-tags-row">
-                  <a
-                    href={`mailto:${CONTACT_EMAIL}`}
-                    className="contact-btn"
-                    aria-label={`Contact ${CONTACT_EMAIL}`}
-                    title={CONTACT_EMAIL}
-                  >
-                    <Mail size={19} strokeWidth={2} />
-                  </a>
                   {/* Numbered pills only make sense for the tiny anonymous allowance —
                       an account has 100, so it gets a plain count instead. */}
                   {unlimited ? (
@@ -2392,7 +2369,8 @@ export default function App() {
                     : listenHint
                       ? <span className="controls-meta-hint">{listenHint}</span>
                       : unlimited
-                        ? 'unlimited generations'
+                        // The "✦ Unlimited" pill above already says it — no need to repeat it as prose.
+                        ? ''
                         : demoUsesLeft === 0
                           ? (auth.user
                               ? (auth.user.billing_enabled
@@ -2464,20 +2442,25 @@ export default function App() {
                 </button>
               </div>
 
-              <button
-                type="button"
-                className="hamburger-btn"
-                onClick={() => setSidebarOpen(true)}
-                aria-label="Open menu"
-              >
-                <Menu size={19} strokeWidth={2} />
-              </button>
+              {!sidebarOpen && (
+                <button
+                  type="button"
+                  className="hamburger-btn"
+                  onClick={() => setSidebarOpen(true)}
+                  aria-label="Open menu"
+                >
+                  <Menu size={19} strokeWidth={2} />
+                </button>
+              )}
               <Sidebar
                 open={sidebarOpen}
                 onClose={() => setSidebarOpen(false)}
                 auth={auth}
+                apiBase={API_BASE}
                 contactEmail={CONTACT_EMAIL}
-                onOpenSavedWork={() => setShowSavedWork(true)}
+                onLoadSession={restoreSessionSnapshot}
+                canSaveCurrent={hasAnyHistory}
+                onSaveCurrent={saveCurrentSession}
                 onOpenUpgrade={() => { setUpgradeReason(null); setShowUpgrade(true); }}
                 onOpenPortal={auth.openBillingPortal}
                 onSignOut={() => { auth.logout(); setEntered(false); }}
@@ -2540,19 +2523,6 @@ export default function App() {
                   )}
                 </div>
               </div>,
-              document.body,
-            )
-          )}
-          {showSavedWork && (
-            createPortal(
-              <SavedWorkModal
-                apiBase={API_BASE}
-                authHeaders={auth.authHeaders}
-                onClose={() => setShowSavedWork(false)}
-                onLoad={restoreSessionSnapshot}
-                canSaveCurrent={hasAnyHistory}
-                onSaveCurrent={saveCurrentSession}
-              />,
               document.body,
             )
           )}
