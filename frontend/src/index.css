@@ -1061,6 +1061,18 @@ body {
   color: #dc2626;
 }
 
+.auth-error-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: #7c5cfc;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .auth-switch-link {
   display: block;
   margin-top: 14px;

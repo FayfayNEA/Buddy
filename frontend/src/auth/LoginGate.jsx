@@ -65,10 +65,15 @@ export default function LoginGate({ auth, onEnter, onDemo, onCancel }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // A failed login is ambiguous on purpose (the backend never says whether the
+  // account exists, to avoid leaking which emails have signed up), so offer the
+  // "no account yet" path regardless of which one it actually was.
+  const [loginFailed, setLoginFailed] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
     setError('');
+    setLoginFailed(false);
     setBusy(true);
     try {
       if (mode === 'signup') await auth.signup(email.trim(), password);
@@ -76,6 +81,7 @@ export default function LoginGate({ auth, onEnter, onDemo, onCancel }) {
       onEnter();
     } catch (err) {
       setError(err?.response?.data?.detail || 'Something went wrong. Try again.');
+      if (mode === 'login' && err?.response?.status === 401) setLoginFailed(true);
     } finally {
       setBusy(false);
     }
@@ -92,14 +98,14 @@ export default function LoginGate({ auth, onEnter, onDemo, onCancel }) {
           <button
             type="button"
             className={`login-tab${mode === 'login' ? ' login-tab--active' : ''}`}
-            onClick={() => { setMode('login'); setError(''); }}
+            onClick={() => { setMode('login'); setError(''); setLoginFailed(false); }}
           >
             Login
           </button>
           <button
             type="button"
             className={`login-tab${mode === 'signup' ? ' login-tab--active' : ''}`}
-            onClick={() => { setMode('signup'); setError(''); }}
+            onClick={() => { setMode('signup'); setError(''); setLoginFailed(false); }}
           >
             Sign Up
           </button>
@@ -148,7 +154,23 @@ export default function LoginGate({ auth, onEnter, onDemo, onCancel }) {
             {mode === 'signup' && (
               <div className="login-field-hint">At least 8 characters, with a number and an uppercase letter.</div>
             )}
-            {error && <div className="auth-error">{error}</div>}
+            {error && (
+              <div className="auth-error">
+                {error}
+                {loginFailed && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className="auth-error-link"
+                      onClick={() => { setMode('signup'); setError(''); setLoginFailed(false); }}
+                    >
+                      New here? Create an account
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             <button type="submit" className="login-submit-btn" disabled={busy}>
               {busy ? 'Please wait…' : (mode === 'signup' ? 'Sign Up' : 'Login')}
             </button>

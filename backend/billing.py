@@ -37,6 +37,9 @@ def billing_enabled() -> bool:
 
 def _init():
     stripe.api_key = stripe_key()
+    # The stripe-python 11.4.1 pin (2024-12-18.acacia) predates Managed Payments,
+    # which this account has enabled and which requires 2025-03-31.basil or newer.
+    stripe.api_version = "2025-03-31.basil"
 
 
 def ensure_customer(user, db) -> str:
