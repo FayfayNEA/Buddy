@@ -83,11 +83,10 @@ export default function LoginGate({ auth, onEnter, onDemo, onCancel }) {
 
   return (
     <div className="login-gate">
-      {onCancel && (
-        <button type="button" className="login-gate-close" onClick={onCancel} aria-label="Close">×</button>
-      )}
       <div className="login-gate-inner">
-        <img src="/images/buddyname.svg" alt="Buddy" className="login-gate-logo" />
+        <a href="/" className="login-gate-logo-link" aria-label="Back to Buddy home">
+          <img src="/images/buddyname.svg" alt="Buddy" className="login-gate-logo" />
+        </a>
 
         <div className="login-tabs">
           <button
@@ -146,6 +145,9 @@ export default function LoginGate({ auth, onEnter, onDemo, onCancel }) {
               onChange={(e) => setPassword(e.target.value)}
               className="auth-input"
             />
+            {mode === 'signup' && (
+              <div className="login-field-hint">At least 8 characters, with a number and an uppercase letter.</div>
+            )}
             {error && <div className="auth-error">{error}</div>}
             <button type="submit" className="login-submit-btn" disabled={busy}>
               {busy ? 'Please wait…' : (mode === 'signup' ? 'Sign Up' : 'Login')}
@@ -155,11 +157,16 @@ export default function LoginGate({ auth, onEnter, onDemo, onCancel }) {
 
         {onDemo && (
           <button type="button" className="login-demo-link" onClick={onDemo}>
-            Try the demo instead — no account needed
+            Try the demo instead, no account needed
+          </button>
+        )}
+        {onCancel && (
+          <button type="button" className="login-demo-link" onClick={onCancel}>
+            Continue with the demo
           </button>
         )}
 
-        <a href="/" className="login-back-link">← Back to Home</a>
+        <a href="/" className="login-back-link">Back to Home</a>
       </div>
     </div>
   );

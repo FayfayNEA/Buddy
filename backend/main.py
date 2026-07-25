@@ -369,10 +369,13 @@ def _user_public(user: User) -> dict:
     }
 
 
+_PASSWORD_RE = re.compile(r"^(?=.*[0-9])(?=.*[A-Z]).{8,}$")
+
+
 @app.post("/auth/signup")
 def signup(body: SignupBody, db: Session = Depends(get_db)):
-    if len(body.password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if not _PASSWORD_RE.match(body.password):
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters and include a number and an uppercase letter")
     email = body.email.strip().lower()
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=409, detail="An account with that email already exists")

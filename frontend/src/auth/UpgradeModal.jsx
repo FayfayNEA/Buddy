@@ -33,7 +33,7 @@ export default function UpgradeModal({ auth, reason, onClose }) {
         </ul>
         {error && <div className="auth-error">{error}</div>}
         <button type="button" className="access-notice-btn" onClick={go} disabled={busy}>
-          {busy ? 'Opening checkout…' : 'Upgrade — $10/month'}
+          {busy ? 'Opening checkout…' : 'Upgrade, $10/month'}
         </button>
         <button type="button" className="auth-switch-link" onClick={onClose}>
           Not now

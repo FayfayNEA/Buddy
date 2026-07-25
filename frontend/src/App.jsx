@@ -166,7 +166,7 @@ async function materializeMediaUrl(url) {
 function micErrorMessage(err) {
   const name = err?.name || '';
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-    return 'Microphone permission blocked — allow mic access and try again';
+    return 'Microphone permission blocked, allow mic access and try again';
   }
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
     return 'No microphone found';
@@ -892,7 +892,7 @@ export default function App() {
       });
       if (!stillLive()) return false;
       if (res.data.error) {
-        flashListenHint("Didn't catch that — keep talking");
+        flashListenHint("Didn't catch that, keep talking");
         return false;
       }
 
@@ -902,7 +902,7 @@ export default function App() {
       // no media used to flash "Done" and look like a lie.
       const hasMedia = !!(res.data.image_url || res.data.video_url || res.data.diagram_code);
       if (!hasMedia) {
-        flashListenHint("Didn't catch that — keep talking");
+        flashListenHint("Didn't catch that, keep talking");
         return false;
       }
 
@@ -920,7 +920,7 @@ export default function App() {
       if (!stillLive()) return false;
       if (handleQuotaError(err)) return false;
       const aborted = err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError';
-      flashListenHint(aborted ? 'That took too long — try again' : 'Generation failed — try again');
+      flashListenHint(aborted ? 'That took too long, try again' : 'Generation failed, try again');
       return false;
     }
   };
@@ -997,7 +997,7 @@ export default function App() {
         if (res.data.transcript && !res.data.hallucination) {
           mockupPendingRefs.current[idx] = [...(mockupPendingRefs.current[idx] || []), res.data.transcript].slice(-8);
         }
-        flashListenHint("Didn't catch that — keep talking");
+        flashListenHint("Didn't catch that, keep talking");
         outcome = null;
         return;
       }
@@ -1051,7 +1051,7 @@ export default function App() {
       } else {
         const aborted = err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError';
         if (aborted && mockupPreviousSpecRefs.current[idx]) {
-          flashListenHint('That took too long — try again');
+          flashListenHint('That took too long, try again');
         } else if (!aborted) {
           setMockupErrors(p => {
             const n = p.length === count ? [...p] : new Array(count).fill(null);
@@ -1059,7 +1059,7 @@ export default function App() {
             return n;
           });
         } else {
-          flashListenHint('That took too long — try again');
+          flashListenHint('That took too long, try again');
         }
         outcome = 'Failed';
       }
@@ -1312,7 +1312,7 @@ export default function App() {
                 sendMockupAudioRef.current(blob, speakerIdx);
               } else if (hadSpeech) {
                 console.warn('Mockup chunk skipped (too small):', blob?.size, 'bytes');
-                flashListenHintRef.current?.("Didn't catch that — keep talking");
+                flashListenHintRef.current?.("Didn't catch that, keep talking");
               }
             } else if (hadSpeech && blob?.size > MIN_BLOB) {
               const samples = pitchSamplesRef.current.splice(0);
@@ -1326,7 +1326,7 @@ export default function App() {
               processQueueRef.current?.(speakerIdx);
             } else if (hadSpeech) {
               console.warn('Image chunk skipped (too small):', blob?.size, 'bytes');
-              flashListenHintRef.current?.("Didn't catch that — keep talking");
+              flashListenHintRef.current?.("Didn't catch that, keep talking");
             }
 
             pitchSamplesRef.current.splice(0);
@@ -1339,7 +1339,7 @@ export default function App() {
             resetChunkCounters();
           } catch (e) {
             console.error('cutChunk failed:', e);
-            flashListenHintRef.current?.('Recorder glitch — keep talking');
+            flashListenHintRef.current?.('Recorder glitch, keep talking');
             try {
               if (streamRef.current?.active && vibeSessionIdRef.current === sessionAtCut) {
                 recorderRef.current = newAudioRecorder(streamRef.current);
@@ -1413,7 +1413,7 @@ export default function App() {
         if (!speechSinceCutRef.current || cuttingRef.current) return;
         if (!firstSpeechAtRef.current || !lastSpeechAtRef.current) return;
 
-        const pauseMs = appModeRef.current === 'mockup' ? 1600 : 1400;
+        const pauseMs = appModeRef.current === 'mockup' ? 4000 : 1400;
         const silentFor = now - lastSpeechAtRef.current;
         const hasEnoughSpeech = speechMsInChunkRef.current >= MIN_SPEECH_MS;
         const longPause = silentFor >= pauseMs;
@@ -2204,7 +2204,7 @@ export default function App() {
                               ) : err === 'oops' && stack.length === 0 ? (
                                 <div className="stage-empty stage-empty--blobs mockup-oops-state">
                                   <EmptyBlobs blobPos={blobPos} />
-                                  <p>oops — try again</p>
+                                  <p>oops, try again</p>
                                 </div>
                               ) : null}
                             </div>
@@ -2270,7 +2270,7 @@ export default function App() {
                             {err === 'oops' && stack.length === 0 && (
                               <div className="mockup-frame mockup-oops-state mockup-frame--blobs">
                                 <EmptyBlobs blobPos={blobPos} />
-                                <p>oops, i messed up — let's try again</p>
+                                <p>oops, i messed up, let's try again</p>
                               </div>
                             )}
                             {currentIter && (
@@ -2366,8 +2366,8 @@ export default function App() {
                         : demoUsesLeft === 0
                           ? (auth.user
                               ? (auth.user.billing_enabled
-                                  ? <span>out of generations — <button type="button" className="inline-upgrade-link" onClick={() => { setUpgradeReason(null); setShowUpgrade(true); }}>upgrade for unlimited</button></span>
-                                  : <span>out of generations — <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></span>)
+                                  ? <span>out of generations, <button type="button" className="inline-upgrade-link" onClick={() => { setUpgradeReason(null); setShowUpgrade(true); }}>upgrade for unlimited</button></span>
+                                  : <span>out of generations, <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></span>)
                               : <span>want more? <button type="button" className="inline-upgrade-link" onClick={() => setShowLoginGate(true)}>sign up free</button></span>)
                           : `${demoUsesLeft} of ${generationLimit} generations left`}
                 </div>
@@ -2451,7 +2451,7 @@ export default function App() {
                   </>
                 ) : (
                   <button type="button" onClick={() => setShowLoginGate(true)} className="account-btn">
-                    Sign in
+                    Sign up
                   </button>
                 ))}
               </div>

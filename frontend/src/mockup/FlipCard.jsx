@@ -112,7 +112,7 @@ export default function FlipCard({
             {/* Buddy built this off a vibe rather than an explicit UI request — say so, so
                 nobody wonders why they got a cocktail app out of "deep red, late night". */}
             {isInterpretive && (
-              <span className="mockup-interpretive-badge" title="Built from the mood, not a direct request — keep talking to steer it">
+              <span className="mockup-interpretive-badge" title="Built from the mood, not a direct request. Keep talking to steer it">
                 interpreted
               </span>
             )}
