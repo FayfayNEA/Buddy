@@ -1812,9 +1812,11 @@ export default function App() {
   return (
     <div className={`app${appMode === 'mockup' ? ' app--mockup' : ''}${crowdedImageLayout || crowdedMockupLayout ? ' app--crowded-image' : ''}${(hasAnyHistory || crowdedImageLayout || crowdedMockupLayout) ? ' app--scrollable' : ''}${multiMockup ? ' app--multi-mockup' : ''}`}>
 
-      {/* ── Login gate: sign in, sign up, or continue as a demo guest ── */}
+      {/* ── Login gate: sign in, sign up, or continue as a demo guest ──
+          Waits on auth.ready so a returning signed-in visitor never sees the gate
+          flash before the stored token is confirmed valid. */}
       <AnimatePresence>
-        {!entered && (
+        {auth.ready && !entered && (
           <LoginGate auth={auth} onEnter={() => setEntered(true)} />
         )}
       </AnimatePresence>
