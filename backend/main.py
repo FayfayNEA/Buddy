@@ -13,12 +13,14 @@ from collections import deque
 from datetime import datetime, timezone
 from threading import Lock
 import requests
-from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Query
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Query, Depends
 from fastapi.responses import Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, EmailStr
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 from openai import OpenAI
 import fal_client
@@ -28,6 +30,11 @@ from reportlab.lib.utils import simpleSplit
 import asyncio
 
 load_dotenv()
+
+# db/auth read DATABASE_URL/JWT_SECRET at import time, so .env must already be loaded above.
+from db import init_db, get_db, User, SavedSession, IS_SQLITE
+from auth import hash_password, verify_password, create_token, get_current_user, get_user_from_request
+import billing
 
 # Normalize secret env vars — .env files often pick up accidental leading/trailing spaces
 # which break Fal/OpenAI auth without an obvious "key missing" signal.
@@ -70,6 +77,11 @@ _trace_lock = Lock()
 # count is the larger of the two, so clearing localStorage alone doesn't grant a fresh allowance.
 _DEMO_LIMIT = int(os.getenv("DEMO_LIMIT", "5"))
 _VIDEO_DEMO_LIMIT = int(os.getenv("VIDEO_DEMO_LIMIT", "1"))
+
+# Signed-in free tier — much larger than the anonymous demo, still capped. Paying
+# subscribers bypass both (see _quota_for).
+_ACCOUNT_LIMIT = int(os.getenv("ACCOUNT_LIMIT", "100"))
+_ACCOUNT_VIDEO_LIMIT = int(os.getenv("ACCOUNT_VIDEO_LIMIT", "2"))
 _demo_tokens: dict = {}       # token -> use_count (general)
 _demo_ip_usage: dict = {}     # client_ip -> use_count (general)
 _video_demo_tokens: dict = {}     # token -> use_count (video-only)
@@ -134,6 +146,89 @@ def _increment_video_demo(token: str, ip: str) -> int:
         if ip in _DEMO_UNLIMITED_IPS:
             return 0
         return max(_video_demo_tokens[token], _video_demo_ip_usage[ip])
+
+
+# ── Quota gate ────────────────────────────────────────────────────────────────
+# Three tiers: anonymous (small demo), signed-in free (_ACCOUNT_LIMIT), and paid
+# (unlimited). Signed-in usage is counted in the DB; anonymous stays on the existing
+# token+IP counters. 402 is used for "you need to pay to continue" so the frontend can
+# tell it apart from the anonymous 429 ("sign up, it's free").
+
+def _enforce_generation_quota(user, anon_uses: int) -> None:
+    if user is not None:
+        if user.is_paid:
+            return
+        if user.generations_used >= _ACCOUNT_LIMIT:
+            raise HTTPException(
+                status_code=402,
+                detail=f"You've used all {_ACCOUNT_LIMIT} generations on the free plan. Upgrade for unlimited.",
+            )
+        return
+    if anon_uses >= _DEMO_LIMIT:
+        raise HTTPException(status_code=429, detail="Demo limit reached")
+
+
+def _enforce_video_quota(user, token: str, ip: str) -> None:
+    if user is not None:
+        if user.is_paid:
+            return
+        if user.video_generations_used >= _ACCOUNT_VIDEO_LIMIT:
+            raise HTTPException(
+                status_code=402,
+                detail=f"You've used all {_ACCOUNT_VIDEO_LIMIT} videos on the free plan. Upgrade for unlimited.",
+            )
+        return
+    if _video_demo_uses(token, ip) >= _VIDEO_DEMO_LIMIT:
+        raise HTTPException(status_code=429, detail="Video demo limit reached")
+
+
+def _consume_generation(user, db, token: str, ip: str, is_video: bool = False) -> None:
+    """Count one generation against whoever made it."""
+    if user is not None:
+        # Atomic UPDATE rather than read-modify-write: several Cloud Run instances can
+        # serve the same account concurrently and would otherwise lose increments.
+        values = {User.generations_used: User.generations_used + 1}
+        if is_video:
+            values[User.video_generations_used] = User.video_generations_used + 1
+        db.query(User).filter(User.id == user.id).update(values, synchronize_session=False)
+        db.commit()
+        db.refresh(user)
+        return
+    _increment_demo_token(token, ip)
+    if is_video:
+        _increment_video_demo(token, ip)
+
+
+def _quota_payload(user, token: str, ip: str) -> dict:
+    """Quota block merged into every generation response so the UI can show what's left."""
+    if user is not None:
+        if user.is_paid:
+            return {
+                "tier": "paid",
+                "unlimited": True,
+                "demo_uses_remaining": None,
+                "generation_limit": None,
+                "videos_remaining": None,
+                "video_limit": None,
+            }
+        return {
+            "tier": "account",
+            "unlimited": False,
+            "demo_uses_remaining": max(0, _ACCOUNT_LIMIT - user.generations_used),
+            "generation_limit": _ACCOUNT_LIMIT,
+            "videos_remaining": max(0, _ACCOUNT_VIDEO_LIMIT - user.video_generations_used),
+            "video_limit": _ACCOUNT_VIDEO_LIMIT,
+        }
+    with _demo_token_lock:
+        used = max(_demo_tokens.get(token, 0), _demo_ip_usage.get(ip, 0)) if ip not in _DEMO_UNLIMITED_IPS else 0
+    return {
+        "tier": "anon",
+        "unlimited": False,
+        "demo_uses_remaining": max(0, _DEMO_LIMIT - used),
+        "generation_limit": _DEMO_LIMIT,
+        "videos_remaining": max(0, _VIDEO_DEMO_LIMIT - _video_demo_uses(token, ip)),
+        "video_limit": _VIDEO_DEMO_LIMIT,
+    }
 
 
 def _push_trace(entry: dict) -> None:
@@ -227,6 +322,206 @@ def _log_startup():
         FAL_IMAGE_MODEL,
     )
     logger.info("CORS allowed origins: %s (credentials=%s)", _allowed_origins, _allow_credentials)
+    init_db()
+    logger.info("Accounts DB ready (JWT_SECRET set=%s)", bool(os.getenv("JWT_SECRET")))
+    if IS_SQLITE:
+        logger.warning(
+            "DATABASE_URL is not set — using local SQLite. Accounts and saved work will be "
+            "LOST on every redeploy/restart. Set DATABASE_URL to a Postgres URL in production."
+        )
+    if not os.getenv("JWT_SECRET"):
+        logger.warning("JWT_SECRET is not set — signup/login will return 500 until it is configured.")
+
+
+# ───────────────────────── Accounts + saved work ─────────────────────────
+
+class SignupBody(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class LoginBody(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class SaveSessionBody(BaseModel):
+    title: str = "Untitled session"
+    data: dict
+
+
+def _user_public(user: User) -> dict:
+    return {
+        "id": user.id,
+        "email": user.email,
+        "is_paid": user.is_paid,
+        # Lets the UI hide the upgrade path entirely when Stripe isn't set up yet,
+        # rather than offering a button that can only fail.
+        "billing_enabled": billing.billing_enabled(),
+        "generations_used": user.generations_used,
+        "generation_limit": None if user.is_paid else _ACCOUNT_LIMIT,
+        "videos_used": user.video_generations_used,
+        "video_limit": None if user.is_paid else _ACCOUNT_VIDEO_LIMIT,
+    }
+
+
+@app.post("/auth/signup")
+def signup(body: SignupBody, db: Session = Depends(get_db)):
+    if len(body.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    email = body.email.strip().lower()
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=409, detail="An account with that email already exists")
+    user = User(email=email, password_hash=hash_password(body.password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {"token": create_token(user.id), "user": _user_public(user)}
+
+
+@app.post("/auth/login")
+def login(body: LoginBody, db: Session = Depends(get_db)):
+    email = body.email.strip().lower()
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    return {"token": create_token(user.id), "user": _user_public(user)}
+
+
+@app.get("/auth/me")
+def me(user: User = Depends(get_current_user)):
+    return _user_public(user)
+
+
+@app.get("/billing/status")
+def billing_status(user: User = Depends(get_current_user)):
+    """What the account is entitled to right now — drives the upgrade UI."""
+    return {
+        "billing_enabled": billing.billing_enabled(),
+        "is_paid": user.is_paid,
+        "subscription_status": user.subscription_status,
+        "generations_used": user.generations_used,
+        "generation_limit": None if user.is_paid else _ACCOUNT_LIMIT,
+        "videos_used": user.video_generations_used,
+        "video_limit": None if user.is_paid else _ACCOUNT_VIDEO_LIMIT,
+        "price_display": os.getenv("STRIPE_PRICE_DISPLAY", "$10/month"),
+    }
+
+
+@app.post("/billing/checkout")
+def billing_checkout(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Start a Stripe Checkout subscription and hand back the redirect URL."""
+    if not billing.billing_enabled():
+        raise HTTPException(status_code=503, detail="Billing is not configured on this server")
+    if user.is_paid:
+        raise HTTPException(status_code=400, detail="You already have an active subscription")
+    base = (os.getenv("APP_BASE_URL") or "http://localhost:5173").rstrip("/")
+    try:
+        url = billing.create_checkout_session(
+            user, db,
+            success_url=f"{base}/?upgraded=1",
+            cancel_url=f"{base}/?upgrade_cancelled=1",
+        )
+    except Exception as e:
+        logger.exception("Stripe checkout failed: %s", e)
+        raise HTTPException(status_code=502, detail="Could not start checkout. Try again.")
+    return {"url": url}
+
+
+@app.post("/billing/portal")
+def billing_portal(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Stripe-hosted portal for managing/cancelling an existing subscription."""
+    if not billing.billing_enabled():
+        raise HTTPException(status_code=503, detail="Billing is not configured on this server")
+    if not user.stripe_customer_id:
+        raise HTTPException(status_code=400, detail="No billing account yet")
+    base = (os.getenv("APP_BASE_URL") or "http://localhost:5173").rstrip("/")
+    try:
+        url = billing.create_portal_session(user, db, return_url=base)
+    except Exception as e:
+        logger.exception("Stripe portal failed: %s", e)
+        raise HTTPException(status_code=502, detail="Could not open the billing portal.")
+    return {"url": url}
+
+
+@app.post("/billing/webhook")
+async def billing_webhook(request: Request, db: Session = Depends(get_db)):
+    """Stripe -> us. This is the ONLY place a subscription is granted or revoked.
+
+    Must read the raw body: the signature is computed over the exact bytes Stripe sent.
+    """
+    payload = await request.body()
+    signature = request.headers.get("stripe-signature", "")
+    try:
+        event = billing.verify_webhook(payload, signature)
+    except ValueError as e:
+        logger.error("Stripe webhook rejected: %s", e)
+        raise HTTPException(status_code=400, detail="Invalid webhook")
+    except Exception as e:
+        logger.error("Stripe webhook signature check failed: %s", e)
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    try:
+        outcome = billing.apply_subscription_event(event, db, User)
+        logger.info("Stripe webhook handled — %s", outcome)
+    except Exception as e:
+        logger.exception("Stripe webhook processing error: %s", e)
+        # 500 tells Stripe to retry, which is what we want for a transient DB blip.
+        raise HTTPException(status_code=500, detail="Webhook processing failed")
+    return {"received": True}
+
+
+@app.get("/sessions")
+def list_sessions(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = (
+        db.query(SavedSession)
+        .filter(SavedSession.user_id == user.id)
+        .order_by(SavedSession.updated_at.desc())
+        .all()
+    )
+    return [
+        {"id": s.id, "title": s.title, "created_at": s.created_at, "updated_at": s.updated_at}
+        for s in rows
+    ]
+
+
+@app.post("/sessions")
+def create_session(body: SaveSessionBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    s = SavedSession(user_id=user.id, title=body.title.strip() or "Untitled session", data=body.data)
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return {"id": s.id, "title": s.title, "created_at": s.created_at, "updated_at": s.updated_at}
+
+
+@app.get("/sessions/{session_id}")
+def get_session(session_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    s = db.query(SavedSession).filter(SavedSession.id == session_id, SavedSession.user_id == user.id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"id": s.id, "title": s.title, "data": s.data, "created_at": s.created_at, "updated_at": s.updated_at}
+
+
+@app.put("/sessions/{session_id}")
+def update_session(session_id: int, body: SaveSessionBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    s = db.query(SavedSession).filter(SavedSession.id == session_id, SavedSession.user_id == user.id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s.title = body.title.strip() or "Untitled session"
+    s.data = body.data
+    db.commit()
+    db.refresh(s)
+    return {"id": s.id, "title": s.title, "created_at": s.created_at, "updated_at": s.updated_at}
+
+
+@app.delete("/sessions/{session_id}")
+def delete_session(session_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    s = db.query(SavedSession).filter(SavedSession.id == session_id, SavedSession.user_id == user.id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found")
+    db.delete(s)
+    db.commit()
+    return {"ok": True}
 
 
 _DEBUG_SECRET = os.getenv("DEBUG_SECRET", "")
@@ -354,6 +649,7 @@ async def upload_audio(
     history_json: str = Form(default="[]"),
     demo_token: str = Form(default=""),
     generation_mode: str = Form(default="image"),
+    db: Session = Depends(get_db),
 ):
     request_id = str(uuid.uuid4())[:10]
     t0 = time.perf_counter()
@@ -364,11 +660,11 @@ async def upload_audio(
 
     logger.info("========== /upload-audio [%s] START ==========", request_id)
 
-    # --- DEMO GATE ---
+    # --- QUOTA GATE ---
     client_ip = _client_ip(request)
+    account = get_user_from_request(request, db)
     resolved_token, uses_so_far = _resolve_demo_token(demo_token, client_ip)
-    if uses_so_far >= _DEMO_LIMIT:
-        raise HTTPException(status_code=429, detail="Demo limit reached")
+    _enforce_generation_quota(account, uses_so_far)
 
     # --- A. SETUP ---
     temp_filename = "temp_voice.wav"
@@ -713,10 +1009,9 @@ async def upload_audio(
         )
 
     elif mode == "VIDEO":
-        # Video is slow/expensive to generate — cap it separately from the general
-        # demo allowance so one visitor can't spend the whole demo budget on video alone.
-        if _video_demo_uses(resolved_token, client_ip) >= _VIDEO_DEMO_LIMIT:
-            raise HTTPException(status_code=429, detail="Video demo limit reached")
+        # Video is slow/expensive to generate — capped separately from the general
+        # allowance so one visitor can't spend their whole budget on video alone.
+        _enforce_video_quota(account, resolved_token, client_ip)
         try:
             args = {
                 "prompt": new_prompt,
@@ -754,9 +1049,8 @@ async def upload_audio(
             logger.exception("[%s] Fal video error: %s", request_id, e)
             media_url = None
 
-    uses_now = _increment_demo_token(resolved_token, client_ip)
-    if mode == "VIDEO" and media_url:
-        _increment_video_demo(resolved_token, client_ip)
+    _consume_generation(account, db, resolved_token, client_ip,
+                        is_video=(mode == "VIDEO" and bool(media_url)))
 
     result = {
         "transcript": user_text,
@@ -767,7 +1061,7 @@ async def upload_audio(
         "diagram_code": diagram_code,
         "seed": final_seed,
         "demo_token": resolved_token,
-        "demo_uses_remaining": max(0, _DEMO_LIMIT - uses_now),
+        **_quota_payload(account, resolved_token, client_ip),
     }
 
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
@@ -832,15 +1126,16 @@ async def synthesize(
     request: Request,
     histories_json: str = Form(...),
     demo_token: str = Form(default=""),
+    db: Session = Depends(get_db),
 ):
     """Blend multiple speakers' histories into one unified image."""
     request_id = str(uuid.uuid4())[:10]
     logger.info("========== /synthesize [%s] START ==========", request_id)
 
     client_ip = _client_ip(request)
+    account = get_user_from_request(request, db)
     resolved_token, uses_so_far = _resolve_demo_token(demo_token, client_ip)
-    if uses_so_far >= _DEMO_LIMIT:
-        raise HTTPException(status_code=429, detail="Demo limit reached")
+    _enforce_generation_quota(account, uses_so_far)
 
     try:
         all_histories = json.loads(histories_json)
@@ -916,7 +1211,7 @@ Return JSON ONLY: { "prompt": "..." }
     except Exception as e:
         logger.exception("[%s] Synthesis fal error: %s", request_id, e)
 
-    uses_now = _increment_demo_token(resolved_token, client_ip)
+    _consume_generation(account, db, resolved_token, client_ip)
 
     logger.info("========== /synthesize [%s] END ==========", request_id)
     return {
@@ -927,7 +1222,7 @@ Return JSON ONLY: { "prompt": "..." }
         "diagram_code": None,
         "seed": final_seed,
         "demo_token": resolved_token,
-        "demo_uses_remaining": max(0, _DEMO_LIMIT - uses_now),
+        **_quota_payload(account, resolved_token, client_ip),
         "is_synthesis": True,
     }
 
@@ -1490,15 +1785,16 @@ async def mockup_endpoint(
     previous_spec_json: str = Form(default="null"),
     context_text: str = Form(default=""),
     demo_token: str = Form(default=""),
+    db: Session = Depends(get_db),
 ):
     """Live-patch the evolving UI spec from a 2.5s audio chunk."""
     request_id = str(uuid.uuid4())[:10]
     logger.info("========== /mockup [%s] START ==========", request_id)
 
     client_ip = _client_ip(request)
+    account = get_user_from_request(request, db)
     resolved_token, uses_so_far = _resolve_demo_token(demo_token, client_ip)
-    if uses_so_far >= _DEMO_LIMIT:
-        raise HTTPException(status_code=429, detail="Demo limit reached")
+    _enforce_generation_quota(account, uses_so_far)
 
     audio_bytes = await file.read()
 
@@ -1547,9 +1843,8 @@ async def mockup_endpoint(
         logger.info("[%s] noOp — no spec change", request_id)
         return {"noOp": True, "transcript": transcript}
 
-    # Only increment demo counter on real changes
-    uses_now = _increment_demo_token(resolved_token, client_ip)
-    remaining = max(0, _DEMO_LIMIT - uses_now)
+    # Only count a generation on real changes
+    _consume_generation(account, db, resolved_token, client_ip)
 
     logger.info("========== /mockup [%s] END (iteration %s) ==========", request_id, spec.get("iterationNumber"))
     return {
@@ -1557,7 +1852,7 @@ async def mockup_endpoint(
         "noOp": False,
         "transcript": transcript,
         "demo_token": resolved_token,
-        "demo_uses_remaining": remaining,
+        **_quota_payload(account, resolved_token, client_ip),
     }
 
 

@@ -958,6 +958,195 @@ body {
   transition: transform 0.25s ease;
 }
 
+/* Account — sign in / my work / sign out pill buttons inside .header-actions */
+.account-btn {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background-color: var(--purple-light);
+  transition: background-color 0.2s ease, transform 0.15s ease;
+}
+
+.account-btn:hover {
+  background-color: var(--purple-light);
+  transform: translateY(-1px);
+}
+
+.account-btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.account-btn--upgrade {
+  background: linear-gradient(135deg, #7c5cfc, #b06bfa);
+}
+
+.account-btn--pro {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+/* Compact quota readout for signed-in accounts (100 numbered pills would be absurd) */
+.demo-count {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 9999px;
+  border: 1px solid var(--border, #e5e5ea);
+}
+
+.unlimited-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  color: #fff;
+  background: linear-gradient(135deg, #7c5cfc, #b06bfa);
+}
+
+.inline-upgrade-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.upgrade-reason {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(124, 92, 252, 0.08);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.upgrade-perks {
+  margin: 0 0 20px;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+/* ── Auth + saved-work modals ── */
+.auth-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border, #e5e5ea);
+  background: var(--bg, #fff);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.auth-error {
+  margin: -4px 0 12px;
+  font-size: 0.85rem;
+  color: #dc2626;
+}
+
+.auth-switch-link {
+  display: block;
+  margin-top: 14px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: center;
+  width: 100%;
+}
+
+.auth-switch-link:hover {
+  text-decoration: underline;
+}
+
+.saved-work-card {
+  max-width: 480px;
+}
+
+.saved-work-save-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.saved-work-save-row .auth-input {
+  margin-bottom: 0;
+}
+
+.saved-work-save-row .access-notice-btn {
+  width: auto;
+  white-space: nowrap;
+}
+
+.saved-work-list {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.saved-work-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border, #e5e5ea);
+}
+
+.saved-work-row-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.saved-work-row-date {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.saved-work-row-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.saved-work-row-actions button {
+  border: 1px solid var(--border, #e5e5ea);
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.saved-work-delete {
+  color: #dc2626;
+}
+
 /* Contact — circular mail button, left-aligned on the 1–5 generation row */
 .contact-btn {
   position: absolute;
@@ -1410,6 +1599,102 @@ body {
 
 .access-notice-btn:hover {
   background: var(--accent-hover);
+}
+
+/* ===== Flow chart expand/magnify ===== */
+.flowchart-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.flowchart-expand-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--border, #e5e5ea);
+  background: var(--bg-elevated, #fff);
+  color: var(--text-secondary, #6b6b70);
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  opacity: 0.85;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.flowchart-expand-btn:hover {
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.flowchart-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(15, 15, 20, 0.55);
+  backdrop-filter: blur(8px);
+}
+
+.flowchart-modal-panel {
+  width: 100%;
+  height: 100%;
+  max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius, 16px);
+  background: var(--bg-elevated, #fff);
+  box-shadow: var(--shadow, 0 20px 60px rgba(0,0,0,0.3));
+  border: 1px solid var(--border, #e5e5ea);
+  overflow: hidden;
+}
+
+.flowchart-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border, #e5e5ea);
+  flex: none;
+}
+
+.flowchart-modal-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.flowchart-modal-close {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--border, #e5e5ea);
+  background: transparent;
+  color: var(--text-secondary, #6b6b70);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.flowchart-modal-close:hover {
+  background: var(--bg-hover, rgba(0,0,0,0.04));
+}
+
+.flowchart-modal-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 24px;
 }
 
 /* ===== Participant Selector ===== */

@@ -9,6 +9,10 @@ import MockupRenderer from './mockup/MockupRenderer';
 import FlipCard from './mockup/FlipCard';
 import FlowChart from './mockup/FlowChart';
 import MockupErrorBoundary from './mockup/ErrorBoundary';
+import { useAuth } from './auth/useAuth';
+import AuthModal from './auth/AuthModal';
+import SavedWorkModal from './auth/SavedWorkModal';
+import UpgradeModal from './auth/UpgradeModal';
 
 mermaid.initialize({
   startOnLoad: true,
@@ -443,6 +447,10 @@ function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, sta
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
+  const auth = useAuth(API_BASE);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showSavedWork, setShowSavedWork] = useState(false);
+
   const [introPhase, setIntroPhase] = useState(0);
   const [vibeMode, setVibeMode] = useState(false);
   const vibeModeRef = useRef(false);
@@ -580,6 +588,14 @@ export default function App() {
       return Math.min(parsed, DEMO_LIMIT);
     } catch { return DEMO_LIMIT; }
   });
+  // Quota display. The cap depends on who's asking: anonymous visitors get DEMO_LIMIT,
+  // signed-in accounts a larger allowance, subscribers none at all (unlimited === true,
+  // where demoUsesLeft is meaningless and never shown).
+  const [generationLimit, setGenerationLimit] = useState(DEMO_LIMIT);
+  const [unlimited, setUnlimited] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeReason, setUpgradeReason] = useState(null); // why it opened (from a 402), or null
+
   const [micError, setMicError] = useState(null);
   const [listenHint, setListenHint] = useState(null);
   const listenHintTimerRef = useRef(null);
@@ -592,6 +608,101 @@ export default function App() {
   flashListenHintRef.current = flashListenHint;
 
   useEffect(() => { demoTokenRef.current = demoToken; }, [demoToken]);
+
+  // Generation requests fire from long-lived audio callbacks, so read the token off a ref
+  // rather than a closure that could be a render behind.
+  const authHeadersRef = useRef({});
+  useEffect(() => {
+    authHeadersRef.current = auth.token ? { Authorization: `Bearer ${auth.token}` } : {};
+  }, [auth.token]);
+
+  // ── Quota plumbing ─────────────────────────────────────────────────────────
+  // Every generation response carries the caller's current allowance; this applies it.
+  const applyQuota = (data) => {
+    if (!data?.demo_token) return;
+    setDemoToken(data.demo_token);
+    demoTokenRef.current = data.demo_token;
+    try { localStorage.setItem(DEMO_TOKEN_KEY, data.demo_token); } catch { /* ignore */ }
+
+    if (data.unlimited) {
+      setUnlimited(true);
+      setGenerationLimit(null);
+      return;
+    }
+    setUnlimited(false);
+    const remaining = data.demo_uses_remaining ?? 0;
+    const limit = data.generation_limit ?? DEMO_LIMIT;
+    setDemoUsesLeft(remaining);
+    setGenerationLimit(limit);
+    // Only the anonymous allowance is mirrored to localStorage — a signed-in user's
+    // count is authoritative in the DB and would go stale here.
+    if (data.tier === 'anon') {
+      try { localStorage.setItem(DEMO_REMAINING_KEY, String(remaining)); } catch { /* ignore */ }
+    }
+    if (remaining === 0) stopVibeSession();
+  };
+
+  // Reflect the signed-in account's allowance in the UI (and fall back to the anonymous
+  // demo counters on sign-out).
+  useEffect(() => {
+    if (!auth.ready) return;
+    const u = auth.user;
+    if (!u) {
+      setUnlimited(false);
+      setGenerationLimit(DEMO_LIMIT);
+      try {
+        const s = localStorage.getItem(DEMO_REMAINING_KEY);
+        const parsed = s !== null ? parseInt(s, 10) : DEMO_LIMIT;
+        setDemoUsesLeft(Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), DEMO_LIMIT) : DEMO_LIMIT);
+      } catch { setDemoUsesLeft(DEMO_LIMIT); }
+      return;
+    }
+    if (u.is_paid) {
+      setUnlimited(true);
+      setGenerationLimit(null);
+      return;
+    }
+    setUnlimited(false);
+    const limit = u.generation_limit ?? DEMO_LIMIT;
+    setGenerationLimit(limit);
+    setDemoUsesLeft(Math.max(0, limit - (u.generations_used ?? 0)));
+  }, [auth.user, auth.ready]);
+
+  // Coming back from Stripe checkout: the webhook may land a moment after the redirect,
+  // so re-check the account a couple of times before giving up.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get('upgraded')) return;
+    window.history.replaceState({}, '', window.location.pathname);
+    let tries = 0;
+    const poll = setInterval(async () => {
+      tries += 1;
+      await auth.refreshUser();
+      if (tries >= 5) clearInterval(poll);
+    }, 1500);
+    return () => clearInterval(poll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.ready]);
+
+  /** Handle a quota rejection. Returns true if it was one (caller should stop). */
+  const handleQuotaError = (err) => {
+    const status = err?.response?.status;
+    if (status === 402) {
+      // Signed-in and out of free allowance — offer the subscription.
+      setDemoUsesLeft(0);
+      setUpgradeReason(err?.response?.data?.detail || "You've used your free allowance.");
+      setShowUpgrade(true);
+      stopVibeSession();
+      return true;
+    }
+    if (status === 429) {
+      setDemoUsesLeft(0);
+      try { localStorage.setItem(DEMO_REMAINING_KEY, '0'); } catch { /* ignore */ }
+      stopVibeSession();
+      return true;
+    }
+    return false;
+  };
 
   // Keep mockup per-mind arrays sized to participant count (mode switches / HMR)
   useEffect(() => {
@@ -779,7 +890,7 @@ export default function App() {
     try {
       // 10-min ceiling covers slow Kling video; the queue watchdog can still abort earlier.
       const res = await axios.post(`${API_BASE}/upload-audio`, formData, {
-        signal, timeout: 600000,
+        signal, timeout: 600000, headers: authHeadersRef.current,
       });
       if (!stillLive()) return false;
       if (res.data.error) {
@@ -787,17 +898,7 @@ export default function App() {
         return false;
       }
 
-      if (res.data.demo_token) {
-        const remaining = res.data.demo_uses_remaining ?? 0;
-        setDemoToken(res.data.demo_token);
-        demoTokenRef.current = res.data.demo_token;
-        setDemoUsesLeft(remaining);
-        try {
-          localStorage.setItem(DEMO_TOKEN_KEY, res.data.demo_token);
-          localStorage.setItem(DEMO_REMAINING_KEY, String(remaining));
-        } catch { /* ignore */ }
-        if (remaining === 0) stopVibeSession();
-      }
+      applyQuota(res.data);
 
       // Real success = something the user can see (image, video, or diagram). A 200 with
       // no media used to flash "Done" and look like a lie.
@@ -819,12 +920,7 @@ export default function App() {
 
     } catch (err) {
       if (!stillLive()) return false;
-      if (err?.response?.status === 429) {
-        setDemoUsesLeft(0);
-        try { localStorage.setItem(DEMO_REMAINING_KEY, '0'); } catch { /* ignore */ }
-        stopVibeSession();
-        return false;
-      }
+      if (handleQuotaError(err)) return false;
       const aborted = err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError';
       flashListenHint(aborted ? 'That took too long — try again' : 'Generation failed — try again');
       return false;
@@ -896,7 +992,7 @@ export default function App() {
     const stillLive = () => vibeSessionIdRef.current === sessionAtStart;
     try {
       const res = await axios.post(`${API_BASE}/mockup`, formData, {
-        signal: controller.signal, timeout: 90000,
+        signal: controller.signal, timeout: 90000, headers: authHeadersRef.current,
       });
       if (!stillLive()) return;
       if (res.data.noOp) {
@@ -948,24 +1044,11 @@ export default function App() {
         n[idx] = spec.screens?.[0]?.id || null;
         return n;
       });
-      if (res.data.demo_token) {
-        const remaining = res.data.demo_uses_remaining ?? 0;
-        setDemoToken(res.data.demo_token);
-        demoTokenRef.current = res.data.demo_token;
-        setDemoUsesLeft(remaining);
-        try {
-          localStorage.setItem(DEMO_TOKEN_KEY, res.data.demo_token);
-          localStorage.setItem(DEMO_REMAINING_KEY, String(remaining));
-        } catch { /* ignore */ }
-        if (remaining === 0) stopVibeSession();
-      }
+      applyQuota(res.data);
       outcome = 'Done';
     } catch (err) {
       if (!stillLive()) return;
-      if (err?.response?.status === 429) {
-        setDemoUsesLeft(0);
-        try { localStorage.setItem(DEMO_REMAINING_KEY, '0'); } catch { /* ignore */ }
-        stopVibeSession();
+      if (handleQuotaError(err)) {
         outcome = 'Failed';
       } else {
         const aborted = err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError';
@@ -1481,19 +1564,11 @@ export default function App() {
       );
       formData.append('demo_token', demoTokenRef.current);
 
-      const res = await axios.post(`${API_BASE}/synthesize`, formData, { timeout: 180000 });
+      const res = await axios.post(`${API_BASE}/synthesize`, formData, {
+        timeout: 180000, headers: authHeadersRef.current,
+      });
 
-      if (res.data.demo_token) {
-        const remaining = res.data.demo_uses_remaining ?? 0;
-        setDemoToken(res.data.demo_token);
-        demoTokenRef.current = res.data.demo_token;
-        setDemoUsesLeft(remaining);
-        try {
-          localStorage.setItem(DEMO_TOKEN_KEY, res.data.demo_token);
-          localStorage.setItem(DEMO_REMAINING_KEY, String(remaining));
-        } catch { /* ignore */ }
-        if (remaining === 0) stopVibeSession();
-      }
+      applyQuota(res.data);
 
       const hasMedia = !!(res.data.image_url || res.data.video_url || res.data.diagram_code);
       if (!res.data.error && hasMedia) {
@@ -1595,6 +1670,40 @@ export default function App() {
   const hasAnyHistory = appMode === 'mockup'
     ? mockupStacks.some(s => (s || []).length > 0)
     : speakerHistories.some(h => h.length > 0);
+
+  // ── Save/restore work to the signed-in account ─────────────────────────
+  const buildSessionSnapshot = () => ({
+    appMode,
+    participantCount,
+    speakerHistories,
+    speakerIndices,
+    mockupStacks,
+    mockupCurrentIdxs,
+    mockupActiveScreenIds,
+    mockupShowFlow,
+    mockupShowTranscript,
+    activeMockupMind,
+  });
+
+  const saveCurrentSession = async (title) => {
+    await axios.post(`${API_BASE}/sessions`, { title, data: buildSessionSnapshot() }, { headers: auth.authHeaders });
+  };
+
+  const restoreSessionSnapshot = (data) => {
+    if (!data) return;
+    resetSession();
+    setAppMode(data.appMode ?? 'image');
+    setParticipantCount(data.participantCount ?? null);
+    setSpeakerHistories(data.speakerHistories ?? []);
+    setSpeakerIndices(data.speakerIndices ?? []);
+    setMockupStacks(data.mockupStacks ?? []);
+    mockupStacksRef.current = data.mockupStacks ?? [];
+    setMockupCurrentIdxs(data.mockupCurrentIdxs ?? []);
+    setMockupActiveScreenIds(data.mockupActiveScreenIds ?? []);
+    setMockupShowFlow(data.mockupShowFlow ?? []);
+    setMockupShowTranscript(data.mockupShowTranscript ?? []);
+    setActiveMockupMind(data.activeMockupMind ?? 0);
+  };
 
   const focusedMind = Math.max(0, Math.min(activeMockupMind, Math.max(0, (participantCount || 1) - 1)));
   const mockupAnyGenerating = mockupGenerating.some(Boolean);
@@ -2215,7 +2324,7 @@ export default function App() {
           <div className="app-bottom-bar">
             <div className={`controls${hasAnyHistory ? ' controls-caption' : ''}`}>
               <div className="controls-inner">
-                <LiquidButton active={vibeMode} onClick={toggleVibe} demoComplete={demoUsesLeft === 0} />
+                <LiquidButton active={vibeMode} onClick={toggleVibe} demoComplete={!unlimited && demoUsesLeft === 0} />
                 <div className="controls-tags-row">
                   <a
                     href={`mailto:${CONTACT_EMAIL}`}
@@ -2225,29 +2334,47 @@ export default function App() {
                   >
                     <Mail size={19} strokeWidth={2} />
                   </a>
-                  <div className="demo-tags" aria-label={`${demoUsesLeft} of ${DEMO_LIMIT} generations left`}>
-                    {Array.from({ length: DEMO_LIMIT }).map((_, i) => {
-                      const used = i < totalUsed;
-                      return (
-                        <span
-                          key={i}
-                          className={`demo-tag${used ? ' demo-tag--used' : ''}`}
-                          title={used ? `Generation ${i + 1} used` : `Generation ${i + 1} available`}
-                        >
-                          {i + 1}
-                        </span>
-                      );
-                    })}
-                  </div>
+                  {/* Numbered pills only make sense for the tiny anonymous allowance —
+                      an account has 100, so it gets a plain count instead. */}
+                  {unlimited ? (
+                    <div className="demo-tags demo-tags--unlimited" aria-label="Unlimited generations">
+                      <span className="unlimited-badge">✦ Unlimited</span>
+                    </div>
+                  ) : generationLimit === DEMO_LIMIT ? (
+                    <div className="demo-tags" aria-label={`${demoUsesLeft} of ${DEMO_LIMIT} generations left`}>
+                      {Array.from({ length: DEMO_LIMIT }).map((_, i) => {
+                        const used = i < totalUsed;
+                        return (
+                          <span
+                            key={i}
+                            className={`demo-tag${used ? ' demo-tag--used' : ''}`}
+                            title={used ? `Generation ${i + 1} used` : `Generation ${i + 1} available`}
+                          >
+                            {i + 1}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="demo-tags" aria-label={`${demoUsesLeft} of ${generationLimit} generations left`}>
+                      <span className="demo-count">{demoUsesLeft} / {generationLimit}</span>
+                    </div>
+                  )}
                 </div>
                 <div className="controls-meta">
                   {micError
                     ? <span className="controls-meta-error">{micError}</span>
                     : listenHint
                       ? <span className="controls-meta-hint">{listenHint}</span>
-                      : demoUsesLeft === 0
-                        ? <span>want more? <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></span>
-                        : `${demoUsesLeft} of ${DEMO_LIMIT} generations left`}
+                      : unlimited
+                        ? 'unlimited generations'
+                        : demoUsesLeft === 0
+                          ? (auth.user
+                              ? (auth.user.billing_enabled
+                                  ? <span>out of generations — <button type="button" className="inline-upgrade-link" onClick={() => { setUpgradeReason(null); setShowUpgrade(true); }}>upgrade for unlimited</button></span>
+                                  : <span>out of generations — <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></span>)
+                              : <span>want more? <button type="button" className="inline-upgrade-link" onClick={() => setShowAuthModal(true)}>sign up free</button></span>)
+                          : `${demoUsesLeft} of ${generationLimit} generations left`}
                 </div>
               </div>
             </div>
@@ -2305,9 +2432,63 @@ export default function App() {
                 <button type="button" onClick={resetSession} className="restart-btn" aria-label="Reset">
                   <RotateCcw size={19} strokeWidth={2} />
                 </button>
+                {auth.ready && (auth.user ? (
+                  <>
+                    {auth.user.is_paid ? (
+                      <button type="button" onClick={auth.openBillingPortal} className="account-btn account-btn--pro" title="Manage subscription">
+                        ✦ Pro
+                      </button>
+                    ) : auth.user.billing_enabled ? (
+                      <button
+                        type="button"
+                        onClick={() => { setUpgradeReason(null); setShowUpgrade(true); }}
+                        className="account-btn account-btn--upgrade"
+                      >
+                        Upgrade
+                      </button>
+                    ) : null}
+                    <button type="button" onClick={() => setShowSavedWork(true)} className="account-btn" title={auth.user.email}>
+                      My work
+                    </button>
+                    <button type="button" onClick={auth.logout} className="account-btn" title="Sign out">
+                      Sign out
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => setShowAuthModal(true)} className="account-btn">
+                    Sign in
+                  </button>
+                ))}
               </div>
             </>,
             document.body,
+          )}
+
+          {showAuthModal && (
+            createPortal(<AuthModal auth={auth} onClose={() => setShowAuthModal(false)} />, document.body)
+          )}
+          {showUpgrade && (
+            createPortal(
+              <UpgradeModal
+                auth={auth}
+                reason={upgradeReason}
+                onClose={() => setShowUpgrade(false)}
+              />,
+              document.body,
+            )
+          )}
+          {showSavedWork && (
+            createPortal(
+              <SavedWorkModal
+                apiBase={API_BASE}
+                authHeaders={auth.authHeaders}
+                onClose={() => setShowSavedWork(false)}
+                onLoad={restoreSessionSnapshot}
+                canSaveCurrent={hasAnyHistory}
+                onSaveCurrent={saveCurrentSession}
+              />,
+              document.body,
+            )
           )}
         </>
       )}

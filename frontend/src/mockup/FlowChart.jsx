@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useId } from 'react';
+import { createPortal } from 'react-dom';
 import { TOKENS } from './tokens.js';
 
 const ff = TOKENS.fontFamily;
@@ -71,9 +72,19 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
   const [positions, setPositions] = useState({});
   const [tempLine, setTempLine] = useState(null); // {fromId, x, y} — connector being dragged
   const [hoverTarget, setHoverTarget] = useState(null);
+  const [expanded, setExpanded] = useState(false); // magnified full-screen view
   const hoverTargetRef = useRef(null); // live value for the pointerup handler (state would be stale there)
   const containerRef = useRef(null);
   const dragRef = useRef(null); // {type:'move'|'rewire', screenId, dx, dy}
+
+  const scale = expanded ? 1.6 : 1;
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e) => { if (e.key === 'Escape') setExpanded(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expanded]);
 
   const screens = (spec?.screens || []).map((s, i) => ({
     ...s,
@@ -133,8 +144,8 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
       const p = getPos(screenId);
       dragRef.current = {
         type: 'move', screenId,
-        offX: e.clientX - rect.left - p.x,
-        offY: e.clientY - rect.top - p.y,
+        offX: (e.clientX - rect.left) / scale - p.x,
+        offY: (e.clientY - rect.top) / scale - p.y,
       };
     } else {
       dragRef.current = { type: 'rewire', screenId };
@@ -148,11 +159,11 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
         const { screenId: sid, offX, offY } = dragRef.current;
         setPositions(prev => ({
           ...prev,
-          [sid]: { x: Math.max(0, ev.clientX - r.left - offX), y: Math.max(0, ev.clientY - r.top - offY) },
+          [sid]: { x: Math.max(0, (ev.clientX - r.left) / scale - offX), y: Math.max(0, (ev.clientY - r.top) / scale - offY) },
         }));
       } else if (dragRef.current?.type === 'rewire') {
-        const x = ev.clientX - r.left;
-        const y = ev.clientY - r.top;
+        const x = (ev.clientX - r.left) / scale;
+        const y = (ev.clientY - r.top) / scale;
         setTempLine(prev => prev ? { ...prev, x, y } : prev);
         // Find which node (if any) is under the cursor
         const under = screens.find(s => {
@@ -184,7 +195,7 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positions, hoverTarget, screens, onRewire]);
+  }, [positions, hoverTarget, screens, onRewire, scale]);
 
   if (!screens.length) {
     return (
@@ -199,11 +210,11 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
   const maxX = Math.max(400, ...screens.map(s => getPos(s.id).x + NODE_W + 40));
   const maxY = Math.max(200, ...screens.map(s => getPos(s.id).y + NODE_H + 40));
 
-  return (
+  const chart = (
     <div
       ref={containerRef}
       className="flowchart-canvas"
-      style={{ position: 'relative', width: '100%', height: maxY, minWidth: Math.min(maxX, 480), fontFamily: ff }}
+      style={{ position: 'relative', width: expanded ? maxX : '100%', height: maxY, minWidth: Math.min(maxX, 480), fontFamily: ff }}
     >
       <svg width={maxX} height={maxY} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         <defs>
@@ -298,6 +309,48 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
           </div>
         );
       })}
+    </div>
+  );
+
+  if (expanded) {
+    return createPortal(
+      <div className="flowchart-modal-backdrop" onClick={() => setExpanded(false)}>
+        <div className="flowchart-modal-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="flowchart-modal-header">
+            <span className="flowchart-modal-title">User flow</span>
+            <button
+              type="button"
+              className="flowchart-modal-close"
+              onClick={() => setExpanded(false)}
+              title="Close (Esc)"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="flowchart-modal-scroll">
+            <div style={{ width: maxX * scale, height: maxY * scale, position: 'relative' }}>
+              <div style={{ position: 'absolute', left: 0, top: 0, transform: `scale(${scale})`, transformOrigin: '0 0' }}>
+                {chart}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  }
+
+  return (
+    <div className="flowchart-wrap" onDoubleClick={() => setExpanded(true)}>
+      {chart}
+      <button
+        type="button"
+        className="flowchart-expand-btn"
+        onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
+        title="Expand flow chart (or double-click)"
+      >
+        🔍
+      </button>
     </div>
   );
 }

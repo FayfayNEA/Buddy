@@ -45,3 +45,4 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+backend/buddy.db
