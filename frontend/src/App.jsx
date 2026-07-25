@@ -1737,14 +1737,26 @@ export default function App() {
   const [badgeDocked, setBadgeDocked] = useState(false);
   const [badgeLeftPx, setBadgeLeftPx] = useState(null);
   const contentEdgeRef = useRef(null);
+  const badgeIntroPlayedRef = useRef(false);
 
   useEffect(() => {
     if (participantCount == null) {
+      badgeIntroPlayedRef.current = false;
       setBadgeDocked(false);
       return undefined;
     }
+    // The drop-then-dock is a one-time intro. Anything that changes the participant
+    // count later (restoring saved work, for one) must not replay it, or the badge
+    // visibly falls back down mid-session.
+    if (badgeIntroPlayedRef.current) {
+      setBadgeDocked(true);
+      return undefined;
+    }
     setBadgeDocked(false);
-    const t = setTimeout(() => setBadgeDocked(true), 1100);
+    const t = setTimeout(() => {
+      badgeIntroPlayedRef.current = true;
+      setBadgeDocked(true);
+    }, 1100);
     return () => clearTimeout(t);
   }, [participantCount]);
 
