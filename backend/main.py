@@ -282,7 +282,7 @@ RULES:
 1. If the speaker describes a chart, graph, flow, timeline, sequence, or data structure → mode: "DIAGRAM" with valid Mermaid.js code (no backticks, no markdown fences).
 2. If they explicitly ask for a video, clip, animation, or footage (words like "video", "clip", "footage", "animate it", "make it move") → mode: "VIDEO" with a precise cinematic prompt: specific camera movement (slow dolly in, static overhead, handheld tracking, locked-off wide shot), color palette, lighting quality, atmosphere/texture, subject and action, emotional register. Favor symmetrical compositions and a sense of melancholic wonder — never generic.
 3. Otherwise, if they describe a scene, object, mood, texture, visual style, or anything imageable → mode: "SKETCH" with a vivid, specific still-image prompt.
-4. For refinements ("make it darker", "add a person", "change the color") keep the previous prompt's core and apply the change. Set "is_refinement": true. A refinement does not change mode — e.g. refining a video stays "VIDEO", refining a still image stays "SKETCH".
+4. For refinements ("make it darker", "add a person", "change the color") keep the previous prompt's core and apply the change. Set "is_refinement": true. A refinement normally keeps the current mode — refining a video stays "VIDEO", refining a still image stays "SKETCH". BUT if the speaker asks for a different output type ("actually make it an image", "show that as a picture instead", "turn it into a chart"), that is NOT a refinement: switch to the requested mode, set "is_refinement": false, and write a fresh prompt for the new mode.
 5. Supported Mermaid types: graph TD, mindmap, pie, sequenceDiagram, xychart-beta, gantt.
 
 Return JSON ONLY: { "mode": "DIAGRAM" or "SKETCH" or "VIDEO", "prompt": "...", "is_refinement": true/false }"""
@@ -901,12 +901,28 @@ async def upload_audio(
 
         # Hard overrides — video no longer has its own mode toggle; the model classifies
         # VIDEO from the persona rules above, and this keyword check is the safety net.
-        if gmode == "video" or any(w in user_text.lower() for w in ["video", "clip", "footage", "animate", "animation"]):
+        _lower = user_text.lower()
+        _model_mode = mode
+        if gmode == "video" or any(w in _lower for w in ["video", "clip", "footage", "animate", "animation"]):
             mode = "VIDEO"
-        elif any(w in user_text.lower() for w in ["diagram", "chart", "graph", "map", "plot"]):
+        # Asking outright for a picture must win, and must come BEFORE the diagram
+        # keywords. Without this there was no way out of DIAGRAM: the brain prompt tells
+        # the model a refinement never changes mode, so "actually make it an image of a
+        # truck" reads as a refinement of the chart and stays a chart forever.
+        elif any(w in _lower for w in [
+            "image", "picture", "photo", "drawing", "illustration",
+            "painting", "render", "sketch", "artwork",
+        ]):
+            mode = "SKETCH"
+        elif any(w in _lower for w in ["diagram", "chart", "graph", "map", "plot"]):
             mode = "DIAGRAM"
         elif mode not in ("DIAGRAM", "VIDEO"):
             mode = "SKETCH"
+
+        # A forced mode switch is a new request, not a refinement of the old one —
+        # otherwise it inherits the previous prompt and (for SKETCH) reuses its seed.
+        if mode != _model_mode:
+            is_refinement = False
 
         trace_step(
             "brain_gpt",

@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Mail, LogOut, ChevronDown } from 'lucide-react';
 import { useEscapeToClose } from './auth/useEscapeToClose';
 
-function MyWorkAccordion({ open, apiBase, authHeaders, canSaveCurrent, onSaveCurrent, onLoadSession, onClose }) {
+function MyWorkAccordion({ open, apiBase, authHeaders, canSaveCurrent, onSaveCurrent, onLoadSession, onClose, sessionsVersion }) {
   const [sessions, setSessions] = useState(null); // null = not loaded yet
   const [error, setError] = useState('');
   const [savingTitle, setSavingTitle] = useState('');
@@ -15,11 +15,13 @@ function MyWorkAccordion({ open, apiBase, authHeaders, canSaveCurrent, onSaveCur
       .catch(() => setError('Could not load your saved work.'));
   };
 
-  // Fetch lazily — only once, the first time the accordion is actually opened.
+  // Fetch lazily when first opened, and refetch whenever an autosave bumps the
+  // version so the list reflects newly added generations without reopening.
   useEffect(() => {
-    if (open && sessions === null) refresh();
+    if (!open) return;
+    if (sessions === null || sessionsVersion) refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, sessionsVersion]);
 
   if (!open) return null;
 
@@ -27,7 +29,7 @@ function MyWorkAccordion({ open, apiBase, authHeaders, canSaveCurrent, onSaveCur
     setBusyId(id);
     try {
       const res = await axios.get(`${apiBase}/sessions/${id}`, { headers: authHeaders });
-      onLoadSession(res.data.data);
+      onLoadSession(res.data.data, { id: res.data.id, title: res.data.title });
       onClose();
     } catch {
       setError('Could not open that session.');
@@ -116,6 +118,7 @@ export default function Sidebar({
   onLoadSession,
   canSaveCurrent,
   onSaveCurrent,
+  sessionsVersion,
   onOpenUpgrade,
   onOpenPortal,
   onSignOut,
@@ -158,6 +161,7 @@ export default function Sidebar({
                 onSaveCurrent={onSaveCurrent}
                 onLoadSession={onLoadSession}
                 onClose={onClose}
+                sessionsVersion={sessionsVersion}
               />
               {auth.user.is_paid ? (
                 <>

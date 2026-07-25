@@ -453,6 +453,11 @@ export default function App() {
   const [upgradeConfirmed, setUpgradeConfirmed] = useState(false);
   const [upgradePollDone, setUpgradePollDone] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Bumped whenever a session is written, so the sidebar list refetches.
+  const [sessionsVersion, setSessionsVersion] = useState(0);
+  // The saved session currently on screen, if any. Declared here (not beside the
+  // save/restore helpers) so resetSession, defined above them, can close over it.
+  const activeSessionRef = useRef(null);
 
   const [entered, setEntered] = useState(false);
   // Returning signed-in visitors skip the login gate entirely.
@@ -1512,6 +1517,9 @@ export default function App() {
 
   const resetSession = () => {
     stopVibeSession();
+    // Detach from whatever saved session was open — a fresh start must never
+    // autosave over it. restoreSessionSnapshot re-attaches right after calling this.
+    activeSessionRef.current = null;
     mergeModeRef.current = false;
     setMergeMode(false);
     originalHistoriesRef.current = [];
@@ -1702,12 +1710,20 @@ export default function App() {
   });
 
   const saveCurrentSession = async (title) => {
-    await axios.post(`${API_BASE}/sessions`, { title, data: buildSessionSnapshot() }, { headers: auth.authHeaders });
+    const res = await axios.post(
+      `${API_BASE}/sessions`,
+      { title, data: buildSessionSnapshot() },
+      { headers: auth.authHeaders },
+    );
+    // Adopt the new session so later generations auto-save into it.
+    activeSessionRef.current = { id: res.data.id, title: res.data.title };
   };
 
-  const restoreSessionSnapshot = (data) => {
+  const restoreSessionSnapshot = (data, meta) => {
     if (!data) return;
     resetSession();
+    // Track which saved session is on screen so new generations flow back into it.
+    activeSessionRef.current = meta?.id ? { id: meta.id, title: meta.title } : null;
     setAppMode(data.appMode ?? 'image');
     setParticipantCount(data.participantCount ?? null);
     setSpeakerHistories(data.speakerHistories ?? []);
@@ -1720,6 +1736,25 @@ export default function App() {
     setMockupShowTranscript(data.mockupShowTranscript ?? []);
     setActiveMockupMind(data.activeMockupMind ?? 0);
   };
+
+  // Autosave: once a session is open (loaded or just saved), new generations flow
+  // straight back into it. Debounced so a burst of rapid generations writes once,
+  // and skipped entirely while a generation is still in flight.
+  const anyGenerating = speakerGenerating.some(Boolean) || mockupGenerating.some(Boolean) || isSynthesizing;
+  useEffect(() => {
+    const active = activeSessionRef.current;
+    if (!active?.id || !auth.user || anyGenerating || !hasAnyHistory) return undefined;
+    const t = setTimeout(() => {
+      axios.put(
+        `${API_BASE}/sessions/${active.id}`,
+        { title: active.title, data: buildSessionSnapshot() },
+        { headers: authHeadersRef.current },
+      ).then(() => setSessionsVersion(v => v + 1))
+        .catch(() => { /* autosave is best-effort; the manual Save button still works */ });
+    }, 1200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [speakerHistories, mockupStacks, anyGenerating, hasAnyHistory, auth.user]);
 
   const focusedMind = Math.max(0, Math.min(activeMockupMind, Math.max(0, (participantCount || 1) - 1)));
   const mockupAnyGenerating = mockupGenerating.some(Boolean);
@@ -2463,6 +2498,7 @@ export default function App() {
                 onLoadSession={restoreSessionSnapshot}
                 canSaveCurrent={hasAnyHistory}
                 onSaveCurrent={saveCurrentSession}
+                sessionsVersion={sessionsVersion}
                 onOpenUpgrade={() => { setUpgradeReason(null); setShowUpgrade(true); }}
                 onOpenPortal={auth.openBillingPortal}
                 onSignOut={() => { auth.logout(); setEntered(false); }}
