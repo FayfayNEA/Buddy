@@ -419,8 +419,8 @@ def billing_checkout(user: User = Depends(get_current_user), db: Session = Depen
     try:
         url = billing.create_checkout_session(
             user, db,
-            success_url=f"{base}/?upgraded=1",
-            cancel_url=f"{base}/?upgrade_cancelled=1",
+            success_url=f"{base}/product?upgraded=1",
+            cancel_url=f"{base}/product?upgrade_cancelled=1",
         )
     except Exception as e:
         logger.exception("Stripe checkout failed: %s", e)
@@ -437,7 +437,7 @@ def billing_portal(user: User = Depends(get_current_user), db: Session = Depends
         raise HTTPException(status_code=400, detail="No billing account yet")
     base = (os.getenv("APP_BASE_URL") or "http://localhost:5173").rstrip("/")
     try:
-        url = billing.create_portal_session(user, db, return_url=base)
+        url = billing.create_portal_session(user, db, return_url=f"{base}/product")
     except Exception as e:
         logger.exception("Stripe portal failed: %s", e)
         raise HTTPException(status_code=502, detail="Could not open the billing portal.")
