@@ -65,6 +65,40 @@ const DEMO_RESET_VERSION_KEY = 'buddy_demo_reset_version';
 // limit changed, etc.) — avoids ever needing someone to manually clear localStorage again.
 const DEMO_RESET_VERSION = '2026-07-16-v4';
 const DEMO_LIMIT = 5;
+const WALKTHROUGH_KEY = 'buddy_walkthrough_done';
+
+const WALKTHROUGH_STEPS = [
+  {
+    num: '01',
+    title: 'Meet Buddy',
+    body: "Your AI design partner. Speak an idea and Buddy turns it into a diagram, a sketch, or a UI mockup in real time.",
+    cardStyle: { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' },
+  },
+  {
+    num: '02',
+    title: 'Status indicator',
+    body: 'This tells you what Buddy is doing. It cycles through Idle, Hearing, Listening, Generating, and Done as you work.',
+    cardStyle: { bottom: '18%', left: '4%' },
+  },
+  {
+    num: '03',
+    title: 'Export & reset',
+    body: 'Export your session as a ZIP with a PDF summary, or hit reset to clear the canvas and start fresh.',
+    cardStyle: { top: '100px', right: '4%' },
+  },
+  {
+    num: '04',
+    title: 'Start Vibing',
+    body: `Hit this button and describe anything out loud. You get ${DEMO_LIMIT} free generations to try it out.`,
+    cardStyle: { bottom: '18%', left: '50%', transform: 'translateX(-50%)' },
+  },
+  {
+    num: '05',
+    title: 'Your canvas',
+    body: 'Whatever you speak appears here as a diagram, sketch, or mockup, ready to refine with your next sentence.',
+    cardStyle: { top: '112px', left: '50%', transform: 'translateX(-50%)' },
+  },
+];
 
 const SPEAKER_COLORS = ['#7c5cfc', '#0891b2', '#d97706', '#16a34a', '#dc2626', '#9333ea'];
 
@@ -437,7 +471,7 @@ function SpeakerPanel({ index, count, history, currentIndex, onPrev, onNext, sta
           }}
         >
           {status === 'Generating'
-            ? (isVideoMode ? 'Generating video... this can take a few minutes' : 'Generating...')
+            ? (isVideoMode ? 'Generating video...' : 'Generating...')
             : status === 'Failed' ? 'Failed' : 'Done'}
         </div>
       )}
@@ -473,6 +507,38 @@ export default function App() {
   // Deriving showApp instead of reading `entered` directly closes that gap in the
   // same render where auth.ready first becomes true.
   const showApp = entered || (auth.ready && !!auth.user);
+
+  // Guided walkthrough — trial (unauthenticated) users only, shown once per browser.
+  const [walkthroughStep, setWalkthroughStep] = useState(null);
+  useEffect(() => {
+    if (!showApp || auth.user) return;
+    const forceOn = new URLSearchParams(window.location.search).has('wt');
+    try {
+      if (forceOn || !localStorage.getItem(WALKTHROUGH_KEY)) setWalkthroughStep(0);
+    } catch {
+      setWalkthroughStep(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showApp, auth.user]);
+  // Spotlight targets (status badge, header actions) render via createPortal onto
+  // document.body, not inside .app — a `.wt-step-N .target` descendant selector
+  // scoped to .app would never match them. Toggle the step class on <body> instead,
+  // since body is the common ancestor for both portaled and in-tree targets.
+  useEffect(() => {
+    const cls = walkthroughStep !== null ? `wt-step-${walkthroughStep}` : null;
+    if (cls) document.body.classList.add(cls);
+    return () => { if (cls) document.body.classList.remove(cls); };
+  }, [walkthroughStep]);
+  const finishWalkthrough = () => {
+    try { localStorage.setItem(WALKTHROUGH_KEY, '1'); } catch { /* ignore */ }
+    setWalkthroughStep(null);
+  };
+  const advanceWalkthrough = () => {
+    if (walkthroughStep === null) return;
+    if (walkthroughStep >= WALKTHROUGH_STEPS.length - 1) finishWalkthrough();
+    else setWalkthroughStep(s => s + 1);
+  };
+
   const [vibeMode, setVibeMode] = useState(false);
   const vibeModeRef = useRef(false);
   useEffect(() => { vibeModeRef.current = vibeMode; }, [vibeMode]);
@@ -914,7 +980,8 @@ export default function App() {
     const stillLive = () => vibeSessionIdRef.current === sessionId;
 
     try {
-      // 10-min ceiling covers slow Kling video; the queue watchdog can still abort earlier.
+      // 10-min ceiling is a safety cap (matters if FAL_VIDEO_MODEL is switched back to
+      // slow Kling-class video); the queue watchdog can still abort earlier.
       const res = await axios.post(`${API_BASE}/upload-audio`, formData, {
         signal, timeout: 600000, headers: authHeadersRef.current,
       });
@@ -1909,6 +1976,49 @@ export default function App() {
       <AnimatePresence>
         {auth.ready && !showApp && (
           <LoginGate auth={auth} onEnter={() => setEntered(true)} onDemo={() => setEntered(true)} />
+        )}
+      </AnimatePresence>
+
+      {/* ── Guided walkthrough: 5-step spotlight tour for trial (unauthenticated) users ── */}
+      <AnimatePresence>
+        {showApp && !auth.user && walkthroughStep !== null && (
+          <motion.div
+            key="wt-overlay"
+            className="wt-overlay"
+            data-step={walkthroughStep}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence mode="wait">
+        {showApp && !auth.user && walkthroughStep !== null && (
+          <motion.div
+            key={walkthroughStep}
+            className="wt-card"
+            style={WALKTHROUGH_STEPS[walkthroughStep].cardStyle}
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
+          >
+            <span className="wt-num">{WALKTHROUGH_STEPS[walkthroughStep].num}</span>
+            <h2 className="wt-title">{WALKTHROUGH_STEPS[walkthroughStep].title}</h2>
+            <p className="wt-body">{WALKTHROUGH_STEPS[walkthroughStep].body}</p>
+            <div className="wt-actions">
+              <button type="button" className="wt-skip" onClick={finishWalkthrough}>skip</button>
+              <button type="button" className="wt-next" onClick={advanceWalkthrough}>
+                {walkthroughStep === WALKTHROUGH_STEPS.length - 1 ? "let's go" : 'next'}
+              </button>
+            </div>
+            <div className="wt-dots">
+              {WALKTHROUGH_STEPS.map((_, i) => (
+                <span key={i} className={`wt-dot${i === walkthroughStep ? ' wt-dot--active' : ''}`} />
+              ))}
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 

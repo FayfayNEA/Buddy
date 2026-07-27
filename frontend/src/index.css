@@ -441,7 +441,7 @@ body {
   aspect-ratio: 4 / 3;
   max-height: 62vh;
   background: var(--bg-elevated);
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
   box-shadow: var(--shadow);
 }
@@ -1784,16 +1784,18 @@ body {
   -webkit-backdrop-filter: none;
 }
 
-/* Lift highlighted element above overlay so it shows through the dim */
-.wt-step-0 .header--fixed,
-.wt-step-1 .status-badge-wrapper,
-.wt-step-2 .header-actions,
-.wt-step-3 .restart-btn {
+/* Lift highlighted element above overlay so it shows through the dim.
+   status-badge-wrapper and header-actions render via createPortal onto <body>,
+   not inside .app, so the step class lives on <body> itself (see App.jsx) rather
+   than scoping these as .app descendants. */
+body.wt-step-1 .status-badge-wrapper,
+body.wt-step-2 .header-actions,
+body.wt-step-3 .app-bottom-bar {
   z-index: 201 !important;
 }
 
 /* Stage lives inside app-inner (z-index:1 stacking context) so lift the whole inner on step 4 */
-.wt-step-4 .app-inner {
+body.wt-step-4 .app-inner {
   z-index: 201 !important;
 }
 
@@ -2479,7 +2481,7 @@ body {
   aspect-ratio: auto;
   flex: 0 0 auto;
   align-self: stretch;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
   box-shadow: var(--shadow);
   box-sizing: border-box;

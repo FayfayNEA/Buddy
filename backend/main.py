@@ -272,7 +272,9 @@ else:
 # Voice/interactive UX: default to FLUX Schnell (fast). For max quality use:
 #   FAL_IMAGE_MODEL=fal-ai/flux-pro/v1.1  (slower)
 FAL_IMAGE_MODEL = os.getenv("FAL_IMAGE_MODEL", "fal-ai/flux/schnell").strip()
-FAL_VIDEO_MODEL = os.getenv("FAL_VIDEO_MODEL", "fal-ai/kling-video/v1.6/standard/text-to-video").strip()
+# LTX-2.3 Fast: speed-optimized text-to-video, seconds instead of Kling's 3-8+ minutes.
+# For max cinematic quality use: FAL_VIDEO_MODEL=fal-ai/kling-video/v1.6/standard/text-to-video (much slower)
+FAL_VIDEO_MODEL = os.getenv("FAL_VIDEO_MODEL", "fal-ai/ltx-2.3/text-to-video/fast").strip()
 
 # ─── LLM Personas — selected per generation mode ─────────────────────────────
 
@@ -1081,19 +1083,33 @@ async def upload_audio(
         # allowance so one visitor can't spend their whole budget on video alone.
         _enforce_video_quota(account, resolved_token, client_ip)
         try:
-            args = {
-                "prompt": new_prompt,
-                "duration": "5",
-                "aspect_ratio": "16:9",
-                "negative_prompt": "blurry, low quality, distorted",
-            }
+            # Kling and LTX-2.3 use different schemas.
+            if "kling" in FAL_VIDEO_MODEL.lower():
+                args = {
+                    "prompt": new_prompt,
+                    "duration": "5",
+                    "aspect_ratio": "16:9",
+                    "negative_prompt": "blurry, low quality, distorted",
+                }
+            else:
+                # Cheapest VALID config: duration only accepts 6/8/10/.../20 and
+                # resolution only 1080p/1440p/2160p, so 6s @ 1080p is the floor.
+                # Audio off — the frontend always plays these muted, so generating it is waste.
+                args = {
+                    "prompt": new_prompt,
+                    "duration": 6,
+                    "resolution": "1080p",
+                    "aspect_ratio": "16:9",
+                    "fps": 24,
+                    "generate_audio": False,
+                }
             trace_step("fal_video_start", model=FAL_VIDEO_MODEL, prompt_preview=new_prompt[:120])
             logger.info(
                 "[%s] Fal video run_async %s prompt_preview=%s",
                 request_id, FAL_VIDEO_MODEL, new_prompt[:120],
             )
-            # Kling-class text-to-video routinely takes 3-8+ minutes for even a 5s clip —
-            # 180s was killing every request before Fal finished rendering.
+            # 540s is a safety ceiling, not an expectation — Kling-class models can take
+            # 3-8+ minutes; LTX-2.3 Fast is built for well under a minute.
             result_v = await asyncio.wait_for(
                 fal_client.run_async(FAL_VIDEO_MODEL, arguments=args),
                 timeout=540.0,
@@ -1405,6 +1421,12 @@ h. HYPOTHETICALS BEING WEIGHED: "what if it was a toggle" (not decided) → no-o
 i. VAGUE QUANTITIES: "a few buttons" → no-op until specific.
 j. REPEATED IDENTICAL REQUESTS: Already in spec → no-op.
 k. SAME-PRODUCT RESTYLE vs PIVOT: "make it look more like Spotify" while already making a music app → theme/style tweak (rule 2), keep screens. "actually generate me a Facebook-like app" while on a music app → rule 8 full rebuild.
+
+FINAL CHECKS — do these two right before you output, they are the most commonly missed:
+
+1. LINKING IS NOT OPTIONAL. If the transcript describes a connection in any form — "tapping X opens Y", "that goes to the Y screen", "leads to", "then shows Y", "from here you can get to Y" — that is an explicit, unambiguous instruction, not a maybe. Find the named source element (the Button/ListRow/tab being described) and set its props.target to the destination screen's id in this SAME edit. Never leave rule 5e for "next time" — a described connection with no target set is a failed edit, not a partial one. Before finalizing, re-scan every screen you touched this turn: does every element the speaker said leads somewhere actually carry a target? If not, add it now.
+
+2. WHEN IN DOUBT, ACT — DO NOT NO-OP CONCRETE SPEECH. The FRINGE CASES above are narrow exceptions, not a default. If the transcript names any concrete app/screen/feature/component/color/style — even briefly, even mid-sentence, even if the rest of the chunk is filler — that is enough to act per rule 4. Reserve no-op for transcripts that, read as a whole, contain nothing buildable at all. If you are unsure whether something counts as concrete, err toward building it rather than no-opping — a slightly-off screen the user can correct beats silence that reads as the app being broken.
 
 OUTPUT BEHAVIOR:
 - If ANY confident, resolvable change: output the full updated spec JSON with changeType "added"/"modified"/"removed" on affected components and a changeLog array.

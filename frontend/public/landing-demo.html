@@ -322,7 +322,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #fff;
+    background: transparent;
   }
   .demo-media img,
   .demo-media video {
@@ -331,9 +331,17 @@
     object-fit: contain;
     display: block;
   }
+  /* Shrink-wrap to the clip's own aspect ratio so the element box IS the visible
+     frame — with width/height forced to 100% the radius clips letterbox padding
+     instead of the video edges, which reads as sharp corners. */
   .demo-media video {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
     object-fit: contain;
     background: transparent;
+    border-radius: 12px;
   }
   .gen-img { border-radius: 8px; object-fit: contain; }
   .gen-video {
@@ -528,12 +536,12 @@
   <section class="demo-section" id="how">
     <div class="tabs reveal" data-delay="1">
       <button class="tab active" data-mode="diagram">Diagram</button>
-      <button class="tab" data-mode="sketch">Sketch</button>
+      <button class="tab" data-mode="industrial">Industrial Design</button>
       <button class="tab" data-mode="mockup">UI Mockup</button>
     </div>
     <div class="placeholder big-placeholder reveal lift" data-delay="2" id="modeStage">
       <div class="demo-media" id="modeMedia">
-        <img src="landing/flowchart-mockup.png" alt="Flow diagram" />
+        <video src="landing/diagram-demo.mp4" autoplay loop muted playsinline></video>
       </div>
     </div>
   </section>
@@ -795,10 +803,10 @@
       if (!media) return;
       if (mode === 'mockup') {
         media.innerHTML = '<img src="landing/ui-mockup.png" alt="UI mockup" style="object-fit:contain;max-height:100%;width:auto;" />';
-      } else if (mode === 'sketch') {
-        media.innerHTML = '<img src="landing/flowchart-mockup.png" alt="Sketch" style="filter:contrast(1.05) saturate(0.7);" />';
+      } else if (mode === 'industrial') {
+        media.innerHTML = '<video src="landing/product-design-demo.mp4" autoplay loop muted playsinline></video>';
       } else {
-        media.innerHTML = '<img src="landing/flowchart-mockup.png" alt="Flow diagram" />';
+        media.innerHTML = '<video src="landing/diagram-demo.mp4" autoplay loop muted playsinline></video>';
       }
     });
   });
