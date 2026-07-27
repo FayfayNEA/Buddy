@@ -1912,6 +1912,17 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* While waiting on /auth/me: with nothing here, a saved login plus a cold
+          backend (Cloud Run scales to zero when idle) meant a genuinely blank white
+          screen for however long that first request took, with no sign anything was
+          happening. */}
+      {!auth.ready && (
+        <div className="auth-loading-screen">
+          <img src="/images/buddyname.svg" alt="Buddy" className="auth-loading-logo" />
+          <div className="auth-loading-spinner" />
+        </div>
+      )}
+
       {/* Sign-in triggered from inside the app (header button, "sign up free" prompt) —
           same full-page gate, but dismissible since a demo session is already underway. */}
       {showLoginGate && (
