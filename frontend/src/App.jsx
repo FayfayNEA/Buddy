@@ -67,6 +67,9 @@ const DEMO_RESET_VERSION = '2026-07-16-v4';
 const DEMO_LIMIT = 5;
 const WALKTHROUGH_KEY = 'buddy_walkthrough_done';
 
+// Runs once the workspace itself is on screen — i.e. AFTER the participant
+// picker. Every step after the intro points at a control that only exists in
+// the workspace, so running it over the picker highlighted nothing.
 const WALKTHROUGH_STEPS = [
   {
     num: '01',
@@ -76,6 +79,12 @@ const WALKTHROUGH_STEPS = [
   },
   {
     num: '02',
+    title: 'Image or Mockup',
+    body: 'Image turns talk into pictures and clips. Mockup builds a real, clickable interface you can keep refining out loud.',
+    cardStyle: { top: '124px', left: '50%', transform: 'translateX(-50%)' },
+  },
+  {
+    num: '03',
     title: 'Status indicator',
     body: 'This tells you what Buddy is doing. It cycles through Idle, Hearing, Listening, Generating, and Done as you work.',
     // Sits under the badge's DOCKED position (top-left). The badge drops in
@@ -84,22 +93,22 @@ const WALKTHROUGH_STEPS = [
     cardStyle: { top: '92px', left: '4.5%' },
   },
   {
-    num: '03',
-    title: 'Export & reset',
-    body: 'Export your session as a ZIP with a PDF summary, or hit reset to clear the canvas and start fresh.',
-    cardStyle: { top: '100px', right: '4%' },
-  },
-  {
     num: '04',
     title: 'Start Vibing',
     body: `Hit this button and describe anything out loud. You get ${DEMO_LIMIT} free generations to try it out.`,
-    cardStyle: { bottom: '18%', left: '50%', transform: 'translateX(-50%)' },
+    cardStyle: { bottom: '20%', left: '50%', transform: 'translateX(-50%)' },
   },
   {
     num: '05',
     title: 'Your canvas',
-    body: 'Whatever you speak appears here as a diagram, sketch, or mockup, ready to refine with your next sentence.',
-    cardStyle: { top: '112px', left: '50%', transform: 'translateX(-50%)' },
+    body: 'Whatever you speak appears here, ready to refine with your next sentence. Say "make it darker" and it revises, not restarts.',
+    cardStyle: { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' },
+  },
+  {
+    num: '06',
+    title: 'Export & reset',
+    body: 'Export your session as a ZIP with a PDF summary, or hit reset to clear the canvas and start fresh.',
+    cardStyle: { top: '104px', right: '4%' },
   },
 ];
 
@@ -512,17 +521,9 @@ export default function App() {
   const showApp = entered || (auth.ready && !!auth.user);
 
   // Guided walkthrough — trial (unauthenticated) users only, shown once per browser.
+  // The trigger effect lives further down, after participantCount is declared, so it
+  // can wait for the workspace instead of firing over the participant picker.
   const [walkthroughStep, setWalkthroughStep] = useState(null);
-  useEffect(() => {
-    if (!showApp || auth.user) return;
-    const forceOn = new URLSearchParams(window.location.search).has('wt');
-    try {
-      if (forceOn || !localStorage.getItem(WALKTHROUGH_KEY)) setWalkthroughStep(0);
-    } catch {
-      setWalkthroughStep(0);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showApp, auth.user]);
   // Spotlight targets (status badge, header actions) render via createPortal onto
   // document.body, not inside .app — a `.wt-step-N .target` descendant selector
   // scoped to .app would never match them. Toggle the step class on <body> instead,
@@ -566,6 +567,25 @@ export default function App() {
   const vibeModeRef = useRef(false);
   useEffect(() => { vibeModeRef.current = vibeMode; }, [vibeMode]);
   const [participantCount, setParticipantCount] = useState(null);
+
+  // Start the tour only once the workspace is actually on screen. It used to fire on
+  // showApp alone, which is already true on the participant picker — so the whole tour
+  // ran over "how many minds?", dimming a page that has none of the controls it
+  // describes. A short delay lets the workspace finish animating in first.
+  useEffect(() => {
+    if (!showApp || auth.user || participantCount === null) return undefined;
+    const forceOn = new URLSearchParams(window.location.search).has('wt');
+    let shouldRun = forceOn;
+    try {
+      shouldRun = forceOn || !localStorage.getItem(WALKTHROUGH_KEY);
+    } catch {
+      shouldRun = true;
+    }
+    if (!shouldRun) return undefined;
+    const t = setTimeout(() => setWalkthroughStep(0), 450);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showApp, auth.user, participantCount]);
 
   // Per-speaker state
   const [speakerHistories, setSpeakerHistories] = useState([]);
@@ -2033,7 +2053,7 @@ export default function App() {
 
       {/* ── Guided walkthrough: 5-step spotlight tour for trial (unauthenticated) users ── */}
       <AnimatePresence>
-        {showApp && !auth.user && walkthroughStep !== null && (
+        {showApp && !auth.user && participantCount !== null && walkthroughStep !== null && (
           <motion.div
             key="wt-overlay"
             className="wt-overlay"
@@ -2046,7 +2066,7 @@ export default function App() {
         )}
       </AnimatePresence>
       <AnimatePresence mode="wait">
-        {showApp && !auth.user && walkthroughStep !== null && (
+        {showApp && !auth.user && participantCount !== null && walkthroughStep !== null && (
           <motion.div
             key={walkthroughStep}
             className="wt-card"

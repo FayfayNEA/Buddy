@@ -1788,18 +1788,21 @@ body {
    status-badge-wrapper and header-actions render via createPortal onto <body>,
    not inside .app, so the step class lives on <body> itself (see App.jsx) rather
    than scoping these as .app descendants. */
-body.wt-step-1 .status-badge-wrapper,
-body.wt-step-2 .header-actions,
-body.wt-step-3 .app-bottom-bar {
+/* Step order: 0 intro · 1 mode toggle · 2 status badge · 3 Start Vibing ·
+   4 canvas · 5 export/reset. Keep in sync with WALKTHROUGH_STEPS in App.jsx. */
+body.wt-step-1 .mode-toggle-row,
+body.wt-step-2 .status-badge-wrapper,
+body.wt-step-3 .app-bottom-bar,
+body.wt-step-5 .header-actions {
   z-index: 201 !important;
 }
 
 /* Lifting the target above the dim made it visible but not obviously *the*
    thing being described — a soft pulsing halo says "look here". */
-body.wt-step-1 .status-badge-wrapper,
-body.wt-step-2 .header-actions,
-body.wt-step-3 .controls-inner {
-  border-radius: 18px;
+body.wt-step-1 .mode-toggle-switch,
+body.wt-step-2 .status-badge-wrapper,
+body.wt-step-3 .controls-inner,
+body.wt-step-5 .header-actions {
   animation: wtSpotlight 2s ease-in-out infinite;
 }
 
@@ -1809,15 +1812,16 @@ body.wt-step-3 .controls-inner {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body.wt-step-1 .status-badge-wrapper,
-  body.wt-step-2 .header-actions,
-  body.wt-step-3 .controls-inner {
+  body.wt-step-1 .mode-toggle-switch,
+  body.wt-step-2 .status-badge-wrapper,
+  body.wt-step-3 .controls-inner,
+  body.wt-step-5 .header-actions {
     animation: none;
     box-shadow: 0 0 0 6px rgba(124, 92, 252, 0.22);
   }
 }
 
-/* Stage lives inside app-inner (z-index:1 stacking context) so lift the whole inner on step 4 */
+/* Stage lives inside app-inner (z-index:1 stacking context) so lift the whole inner */
 body.wt-step-4 .app-inner {
   z-index: 201 !important;
 }
