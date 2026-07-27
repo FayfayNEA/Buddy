@@ -377,7 +377,12 @@ class SaveSessionBody(BaseModel):
     data: dict
 
 
-def _user_public(user: User) -> dict:
+def _user_public(user: User, db: Session) -> dict:
+    # Reset is otherwise lazy and only ran inside the generation endpoints. Any
+    # account whose generations_used was already at the cap before this feature
+    # shipped would read as permanently maxed out here — a disabled Start Vibing
+    # button, which meant the click that would trigger the reset never happened.
+    _reset_quota_if_expired(user, db)
     return {
         "id": user.id,
         "email": user.email,
@@ -406,7 +411,7 @@ def signup(body: SignupBody, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
-    return {"token": create_token(user.id), "user": _user_public(user)}
+    return {"token": create_token(user.id), "user": _user_public(user, db)}
 
 
 @app.post("/auth/login")
@@ -419,7 +424,7 @@ def login(body: LoginBody, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="This account uses Google sign-in. Use 'Continue with Google' instead.")
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
-    return {"token": create_token(user.id), "user": _user_public(user)}
+    return {"token": create_token(user.id), "user": _user_public(user, db)}
 
 
 @app.post("/auth/google")
@@ -431,17 +436,18 @@ def google_auth(body: GoogleAuthBody, db: Session = Depends(get_db)):
         db.add(user)
         db.commit()
         db.refresh(user)
-    return {"token": create_token(user.id), "user": _user_public(user)}
+    return {"token": create_token(user.id), "user": _user_public(user, db)}
 
 
 @app.get("/auth/me")
-def me(user: User = Depends(get_current_user)):
-    return _user_public(user)
+def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _user_public(user, db)
 
 
 @app.get("/billing/status")
-def billing_status(user: User = Depends(get_current_user)):
+def billing_status(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """What the account is entitled to right now — drives the upgrade UI."""
+    _reset_quota_if_expired(user, db)
     return {
         "billing_enabled": billing.billing_enabled(),
         "is_paid": user.is_paid,
