@@ -1981,12 +1981,13 @@ body.wt-step-4 .app-inner {
   overflow: hidden;
 }
 
+/* Top-right, not top-left: the flow panel's top-left corner sits directly under
+   the sidebar hamburger, which the button was disappearing behind. */
 .flowchart-expand-btn {
-  position: sticky;
+  position: absolute;
   top: 6px;
-  left: 6px;
-  float: left;
-  margin-right: -26px;
+  right: 6px;
+  left: auto;
   width: 26px;
   height: 26px;
   display: flex;
