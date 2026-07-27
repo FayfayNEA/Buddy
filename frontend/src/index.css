@@ -2336,31 +2336,30 @@ body {
   gap: 8px;
   padding: 4px 8px;
   border-radius: 100px;
-  background: rgba(255, 255, 255, 0.22);
+  /* Was translucent (22% white) with dark text — sitting on top of the mockup's own
+     themed background, a dark-themed generated app made this nearly unreadable: the
+     blur just tinted toward whatever was underneath instead of staying legible. Now
+     opaque enough that it reads the same regardless of the mockup's own colors. */
+  background: rgba(255, 255, 255, 0.94);
   color: var(--text);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
 }
 
 .panels-row .speaker-panel .stage .mockup-deck-nav--overlay .mockup-nav-btn {
   width: 28px;
   height: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #fff;
   color: var(--text);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  box-shadow: none;
 }
 
 .panels-row .speaker-panel .stage .mockup-deck-nav--overlay .mockup-nav-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.32);
-  border-color: rgba(255, 255, 255, 0.6);
+  background: var(--purple-light);
+  border-color: #7c5cfc;
   color: var(--text);
 }
 
@@ -3585,25 +3584,29 @@ body {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  border: 1.5px solid var(--border);
-  background: transparent;
-  color: var(--text-secondary);
+  /* transparent + a border this faint was invisible against most backgrounds — a
+     solid fill plus a real shadow gives it edges regardless of what's behind it. */
+  border: 1.5px solid var(--purple-border);
+  background: var(--bg-elevated, #fff);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  color: var(--text);
   font-size: 20px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.18s ease, color 0.18s ease;
+  transition: border-color 0.18s ease, color 0.18s ease, transform 0.15s ease;
   line-height: 1;
 }
 
 .mockup-nav-btn:hover:not(:disabled) {
-  border-color: var(--purple-border);
-  color: var(--text);
+  border-color: #7c5cfc;
+  color: #7c5cfc;
+  transform: translateY(-1px);
 }
 
 .mockup-nav-btn:disabled {
-  opacity: 0.3;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
