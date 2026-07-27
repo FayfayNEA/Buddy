@@ -1746,6 +1746,15 @@ export default function App() {
     setSpeakerIndices(data.speakerIndices ?? []);
     setMockupStacks(data.mockupStacks ?? []);
     mockupStacksRef.current = data.mockupStacks ?? [];
+    // The next generation for a mind is sent to the backend as a refinement of
+    // mockupPreviousSpecRefs.current[idx], not of whatever's in mockupStacks — that
+    // ref only gets sized (padded with null) by the participantCount effect below,
+    // never filled with real data here. So continuing a restored session generated
+    // a brand new, unrelated app from previous_spec_json: null every time, which is
+    // what looked like the old session's work being wiped out.
+    mockupPreviousSpecRefs.current = (data.mockupStacks ?? []).map(
+      stack => (stack && stack.length > 0 ? stack[stack.length - 1].spec : null) ?? null
+    );
     setMockupCurrentIdxs(data.mockupCurrentIdxs ?? []);
     setMockupActiveScreenIds(data.mockupActiveScreenIds ?? []);
     setMockupShowFlow(data.mockupShowFlow ?? []);
