@@ -8,6 +8,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Buddy</title>
     <script src="https://t.contentsquare.net/uxa/64019ad1163d5.js" defer></script>
+    <style>
+      /* Plain CSS, not a React component — shows the instant the HTML parses, before
+         the JS bundle has even finished downloading. React's render() overwrites
+         #root's contents the moment it mounts, so this clears itself automatically. */
+      #root:empty {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #F2F0F9;
+      }
+      #root:empty::after {
+        content: '';
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 3px solid rgba(124, 92, 252, 0.25);
+        border-top-color: #7c5cfc;
+        animation: initial-spin 0.8s linear infinite;
+      }
+      @keyframes initial-spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
