@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useId } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { TOKENS } from './tokens.js';
 
@@ -75,9 +75,11 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
   const [expanded, setExpanded] = useState(false); // magnified full-screen view
   const hoverTargetRef = useRef(null); // live value for the pointerup handler (state would be stale there)
   const containerRef = useRef(null);
+  const fitRef = useRef(null);
+  const [fitScale, setFitScale] = useState(1);
   const dragRef = useRef(null); // {type:'move'|'rewire', screenId, dx, dy}
 
-  const scale = expanded ? 1.6 : 1;
+  const scale = expanded ? 1.6 : fitScale;
 
   useEffect(() => {
     if (!expanded) return;
@@ -135,6 +137,27 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
   }, [screens.map(s => s.id).join('|')]);
 
   const getPos = (id) => positions[id] || { x: 24, y: 24 };
+
+  // Natural extent of the laid-out graph, before any fit scaling.
+  const maxX = Math.max(400, ...screens.map(s => getPos(s.id).x + NODE_W + 40));
+  const maxY = Math.max(200, ...screens.map(s => getPos(s.id).y + NODE_H + 40));
+
+  // Fit the whole graph inside its panel instead of clipping it behind a scrollbar.
+  // Capped at 1.35 so a two-node flow doesn't balloon into giant boxes.
+  useLayoutEffect(() => {
+    const el = fitRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const update = () => {
+      const { clientWidth: w, clientHeight: h } = el;
+      if (w <= 0 || h <= 0) return;
+      const next = Math.min(w / maxX, h / maxY, 1.35);
+      setFitScale(prev => (Math.abs(prev - next) < 0.005 ? prev : Math.max(next, 0.35)));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [maxX, maxY]);
 
   const onNodePointerDown = useCallback((e, screenId, mode) => {
     e.preventDefault();
@@ -207,14 +230,11 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
     );
   }
 
-  const maxX = Math.max(400, ...screens.map(s => getPos(s.id).x + NODE_W + 40));
-  const maxY = Math.max(200, ...screens.map(s => getPos(s.id).y + NODE_H + 40));
-
   const chart = (
     <div
       ref={containerRef}
       className="flowchart-canvas"
-      style={{ position: 'relative', width: expanded ? maxX : '100%', height: maxY, minWidth: Math.min(maxX, 480), fontFamily: ff }}
+      style={{ position: 'relative', width: maxX, height: maxY, fontFamily: ff }}
     >
       <svg width={maxX} height={maxY} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         <defs>
@@ -353,7 +373,19 @@ export default function FlowChart({ spec, activeScreenId, onSelectScreen, onRewi
           <line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
       </button>
-      {chart}
+      {/* fitRef measures the available box; the inner layer scales the graph to fit it */}
+      <div ref={fitRef} className="flowchart-fit">
+        <div style={{
+          width: maxX * scale, height: maxY * scale, position: 'relative', margin: 'auto',
+        }}>
+          <div style={{
+            position: 'absolute', left: 0, top: 0,
+            transform: `scale(${scale})`, transformOrigin: '0 0',
+          }}>
+            {chart}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

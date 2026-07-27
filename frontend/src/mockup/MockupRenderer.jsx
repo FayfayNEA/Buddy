@@ -958,7 +958,9 @@ export default function MockupRenderer({ spec, activeScreenId, onScreenChange, s
   const body = (
     <div style={{
       flex: 1,
-      overflowY: useFit ? 'hidden' : 'auto',
+      // Web layouts routinely run past the 560px design viewport; clipping them
+      // left content (buttons, list rows) unreachable with no way to scroll to it.
+      overflowY: useFit && !isWeb ? 'hidden' : 'auto',
       display: 'flex',
       flexDirection: 'column',
       minHeight: 0,
