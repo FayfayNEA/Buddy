@@ -464,6 +464,15 @@ export default function App() {
   useEffect(() => {
     if (auth.ready && auth.user) setEntered(true);
   }, [auth.ready, auth.user]);
+  // entered lags one commit behind auth.ready flipping true — effects run after
+  // the render that triggered them, not within it. On a cold page load where the
+  // user is already authenticated (e.g. landing back on /product after a Stripe
+  // checkout redirect, which is a full navigation, not SPA routing), that gap is
+  // a real, visible frame: the login gate (or a blank screen, depending which of
+  // the three spots below still read the raw flag) before the effect catches up.
+  // Deriving showApp instead of reading `entered` directly closes that gap in the
+  // same render where auth.ready first becomes true.
+  const showApp = entered || (auth.ready && !!auth.user);
   const [vibeMode, setVibeMode] = useState(false);
   const vibeModeRef = useRef(false);
   useEffect(() => { vibeModeRef.current = vibeMode; }, [vibeMode]);
@@ -1889,7 +1898,7 @@ export default function App() {
           Waits on auth.ready so a returning signed-in visitor never sees the gate
           flash before the stored token is confirmed valid. */}
       <AnimatePresence>
-        {auth.ready && !entered && (
+        {auth.ready && !showApp && (
           <LoginGate auth={auth} onEnter={() => setEntered(true)} onDemo={() => setEntered(true)} />
         )}
       </AnimatePresence>
@@ -1906,13 +1915,13 @@ export default function App() {
 
       {/* ── Participant selector ── */}
       <AnimatePresence>
-        {entered && participantCount === null && (
+        {showApp && participantCount === null && (
           <ParticipantSelector onSelect={initializeSpeakers} />
         )}
       </AnimatePresence>
 
       {/* ── Main app ── */}
-      {entered && participantCount !== null && (
+      {showApp && participantCount !== null && (
         <>
           {/* Mode toggle — shared on/off switch for Image ↔ Mockup */}
           <div className={`mode-toggle-row mode-toggle-row--chrome${vibeMode ? ' mode-toggle-row--locked' : ''}`}>
