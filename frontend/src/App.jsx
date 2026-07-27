@@ -1726,6 +1726,13 @@ export default function App() {
     activeSessionRef.current = meta?.id ? { id: meta.id, title: meta.title } : null;
     setAppMode(data.appMode ?? 'image');
     setParticipantCount(data.participantCount ?? null);
+    // The state above drives what renders; this ref drives array sizing every time
+    // a vibe session starts (new Array(participantCountRef.current)...). resetSession
+    // just above set it to 1, and nothing else here touched it — so continuing a
+    // restored multi-speaker session would rebuild speakerStatuses etc. at length 1
+    // against a longer speakerHistories, exactly the kind of mismatch that only a
+    // 1-speaker session's stale-but-coincidentally-correct ref would hide.
+    participantCountRef.current = data.participantCount || 1;
     setSpeakerHistories(data.speakerHistories ?? []);
     setSpeakerIndices(data.speakerIndices ?? []);
     setMockupStacks(data.mockupStacks ?? []);
