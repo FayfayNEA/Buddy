@@ -78,7 +78,10 @@ const WALKTHROUGH_STEPS = [
     num: '02',
     title: 'Status indicator',
     body: 'This tells you what Buddy is doing. It cycles through Idle, Hearing, Listening, Generating, and Done as you work.',
-    cardStyle: { bottom: '18%', left: '4%' },
+    // Sits under the badge's DOCKED position (top-left). The badge drops in
+    // bottom-left then docks after ~1.1s, so pointing bottom-left aimed at
+    // where it no longer is by the time anyone reaches this step.
+    cardStyle: { top: '92px', left: '4.5%' },
   },
   {
     num: '03',
@@ -538,6 +541,26 @@ export default function App() {
     if (walkthroughStep >= WALKTHROUGH_STEPS.length - 1) finishWalkthrough();
     else setWalkthroughStep(s => s + 1);
   };
+  const backWalkthrough = () => {
+    setWalkthroughStep(s => (s === null ? s : Math.max(0, s - 1)));
+  };
+
+  // A tour with no way back and no keyboard meant one stray click lost a step
+  // for good. Esc skips, arrows step either way, Enter/Space advances.
+  useEffect(() => {
+    if (walkthroughStep === null) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') { finishWalkthrough(); return; }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); backWalkthrough(); return; }
+      if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        advanceWalkthrough();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walkthroughStep]);
 
   const [vibeMode, setVibeMode] = useState(false);
   const vibeModeRef = useRef(false);
@@ -2038,13 +2061,25 @@ export default function App() {
             <p className="wt-body">{WALKTHROUGH_STEPS[walkthroughStep].body}</p>
             <div className="wt-actions">
               <button type="button" className="wt-skip" onClick={finishWalkthrough}>skip</button>
-              <button type="button" className="wt-next" onClick={advanceWalkthrough}>
-                {walkthroughStep === WALKTHROUGH_STEPS.length - 1 ? "let's go" : 'next'}
-              </button>
+              <div className="wt-actions-right">
+                {walkthroughStep > 0 && (
+                  <button type="button" className="wt-back" onClick={backWalkthrough}>back</button>
+                )}
+                <button type="button" className="wt-next" onClick={advanceWalkthrough}>
+                  {walkthroughStep === WALKTHROUGH_STEPS.length - 1 ? "let's go" : 'next'}
+                </button>
+              </div>
             </div>
             <div className="wt-dots">
               {WALKTHROUGH_STEPS.map((_, i) => (
-                <span key={i} className={`wt-dot${i === walkthroughStep ? ' wt-dot--active' : ''}`} />
+                <button
+                  key={i}
+                  type="button"
+                  className={`wt-dot${i === walkthroughStep ? ' wt-dot--active' : ''}`}
+                  onClick={() => setWalkthroughStep(i)}
+                  aria-label={`Go to step ${i + 1}`}
+                  aria-current={i === walkthroughStep}
+                />
               ))}
             </div>
           </motion.div>
