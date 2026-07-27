@@ -530,8 +530,10 @@ export default function App() {
   // since body is the common ancestor for both portaled and in-tree targets.
   useEffect(() => {
     const cls = walkthroughStep !== null ? `wt-step-${walkthroughStep}` : null;
-    if (cls) document.body.classList.add(cls);
-    return () => { if (cls) document.body.classList.remove(cls); };
+    if (cls) document.body.classList.add(cls, 'wt-active');
+    return () => {
+      if (cls) document.body.classList.remove(cls, 'wt-active');
+    };
   }, [walkthroughStep]);
   const finishWalkthrough = () => {
     try { localStorage.setItem(WALKTHROUGH_KEY, '1'); } catch { /* ignore */ }
