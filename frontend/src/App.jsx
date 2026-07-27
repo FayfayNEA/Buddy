@@ -1947,7 +1947,15 @@ export default function App() {
         root.querySelector('.mockup-frame') ||
         root;
       const left = Math.round(target.getBoundingClientRect().left);
-      if (Number.isFinite(left) && left >= 0) setBadgeLeftPx(left);
+      // The badge docks at top:24px and the hamburger is fixed at the same height,
+      // so any content edge near the left margin (the web mockup's flow column, in
+      // particular) parks Buddy right on top of it. Never dock left of the button.
+      const hamburger = document.querySelector('.hamburger-btn');
+      const minLeft = hamburger
+        ? Math.round(hamburger.getBoundingClientRect().right) + 14
+        : 0;
+      const docked = Math.max(left, minLeft);
+      if (Number.isFinite(docked) && docked >= 0) setBadgeLeftPx(docked);
     };
 
     measure();
