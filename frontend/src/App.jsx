@@ -2198,7 +2198,7 @@ export default function App() {
                                   >
                                     <div className="mockup-stage-fill mockup-stage-fill--site-sized">
                                       <FlowChart
-                                        spec={latestSpec}
+                                        spec={surfaceSpec}
                                         activeScreenId={screenId}
                                         onSelectScreen={(id) => {
                                           setMindMockupActiveScreenId(mindIdx, id);
@@ -2272,7 +2272,7 @@ export default function App() {
                               ) : showFlow ? (
                                 <div className="mockup-stage-fill mockup-stage-fill--site-sized">
                                   <FlowChart
-                                    spec={latestSpec}
+                                    spec={surfaceSpec}
                                     activeScreenId={screenId}
                                     onSelectScreen={(id) => {
                                       setMindMockupActiveScreenId(mindIdx, id);
@@ -2326,7 +2326,7 @@ export default function App() {
                       <div className={`mockup-with-flow${isWeb ? ' mockup-with-flow--web' : ''}${singleScreen ? ' mockup-with-flow--single-screen' : ''}`}>
                         <div className="flowchart-panel">
                           <FlowChart
-                            spec={latestSpec}
+                            spec={currentSpec}
                             activeScreenId={screenId}
                             onSelectScreen={(id) => {
                               setMindMockupActiveScreenId(0, id);
