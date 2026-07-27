@@ -80,7 +80,7 @@ _VIDEO_DEMO_LIMIT = int(os.getenv("VIDEO_DEMO_LIMIT", "1"))
 
 # Signed-in free tier — much larger than the anonymous demo, still capped. Paying
 # subscribers bypass both (see _quota_for).
-_ACCOUNT_LIMIT = int(os.getenv("ACCOUNT_LIMIT", "100"))
+_ACCOUNT_LIMIT = int(os.getenv("ACCOUNT_LIMIT", "50"))
 _ACCOUNT_VIDEO_LIMIT = int(os.getenv("ACCOUNT_VIDEO_LIMIT", "2"))
 _demo_tokens: dict = {}       # token -> use_count (general)
 _demo_ip_usage: dict = {}     # client_ip -> use_count (general)

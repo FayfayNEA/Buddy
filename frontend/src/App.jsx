@@ -1237,44 +1237,65 @@ export default function App() {
     setActiveMockupMind(idx);
   };
 
-  // Dragging a connector from one flowchart node onto another rewires that screen's
-  // primary outgoing link: an existing Button/ListRow/list-row target if there is one,
-  // otherwise the first Button, otherwise the first list row (screens built from a List
-  // — which the mockup prompt prefers over loose buttons — usually have no Button at all).
+  // Dragging a connector from one flowchart node onto another ADDS that route rather
+  // than stealing an existing one. Order of preference:
+  //   1. the link already points there → nothing to do
+  //   2. an unwired Button / ListRow / nav link → wire it up
+  //   3. nothing spare → append a real Button to the screen for the new route
+  // Overwriting a working link (the old behaviour) meant every new connection silently
+  // broke an existing one, so the flow you wanted never actually appeared.
   const handleFlowRewire = (fromScreenId, toScreenId, mindIdx = activeMockupMind) => {
     applyMockupSpecEdit((spec) => {
       const screen = spec.screens?.find(s => s.id === fromScreenId);
-      if (!screen) return false;
-      let firstWithTarget = null;
-      let firstButton = null;
-      let firstListRow = null;
+      if (!screen || fromScreenId === toScreenId) return false;
+      const toScreen = spec.screens?.find(s => s.id === toScreenId);
+
+      let alreadyLinked = false;
+      let firstFree = null;   // an element with no target yet
       const walk = (list) => {
         for (const c of list || []) {
           if ((c.type === 'Button' || c.type === 'ListRow') && c.props) {
-            if (!firstButton && c.type === 'Button') firstButton = c.props;
-            if (!firstWithTarget && c.props.target) firstWithTarget = c.props;
+            if (c.props.target === toScreenId) alreadyLinked = true;
+            else if (!firstFree && !c.props.target) firstFree = c.props;
           }
           if (c.type === 'List') {
             for (const row of c.props?.rows || []) {
-              if (!firstWithTarget && row.target) firstWithTarget = row;
-              if (!firstListRow) firstListRow = row;
+              if (row.target === toScreenId) alreadyLinked = true;
+              else if (!firstFree && !row.target) firstFree = row;
             }
           }
           if (c.type === 'Card' && Array.isArray(c.props?.components)) walk(c.props.components);
         }
       };
       walk(screen.components);
+
       const navBar = screen.components?.find(c => c.type === 'NavBar');
-      const navLink = navBar?.props?.links?.find(l => !l.target) || navBar?.props?.links?.[0];
-      if (navLink) {
-        navLink.target = toScreenId;
+      for (const l of navBar?.props?.links || []) {
+        if (l.target === toScreenId) alreadyLinked = true;
+        else if (!firstFree && !l.target) firstFree = l;
+      }
+      const tabBar = screen.components?.find(c => c.type === 'TabBar');
+      for (const t of tabBar?.props?.tabs || []) {
+        if (t.target === toScreenId) alreadyLinked = true;
+      }
+      if (alreadyLinked) return false;
+
+      if (firstFree) {
+        firstFree.target = toScreenId;
         return true;
       }
-      const edgeTarget = firstWithTarget || firstButton || firstListRow;
-      if (!edgeTarget) return false;
-      edgeTarget.target = toScreenId;
+
+      // Nothing spare — give the screen a real control for the route the user drew.
+      const label = toScreen?.name || toScreenId;
+      if (!Array.isArray(screen.components)) screen.components = [];
+      screen.components.push({
+        id: `btn_${fromScreenId}_${toScreenId}_${Date.now().toString(36)}`,
+        type: 'Button',
+        props: { label, variant: 'secondary', target: toScreenId },
+        changeType: 'added',
+      });
       return true;
-    }, `rewired flow: ${fromScreenId} → ${toScreenId}`, mindIdx);
+    }, `linked flow: ${fromScreenId} → ${toScreenId}`, mindIdx);
   };
 
   // ── Recording: rolling slices (image) / pause VAD (mockup) ─────────────────
