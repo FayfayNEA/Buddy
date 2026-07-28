@@ -331,9 +331,16 @@
   .tab { padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; border: 1px solid var(--border); color: var(--ink-soft); cursor: pointer; background: transparent; font-family: inherit; }
   .tab.active { background: var(--purple-btn); border-color: transparent; color: #fff; }
 
+  /* Aspect on the CONTENT box, not the padded border box. Under border-box the
+     content area of a 16/9 frame with 24px padding is itself WIDER than 16:9, so
+     a 16:9 clip fit by height and picked up ~19px of extra gutter on each side —
+     the sides read wider than the top and bottom. Sizing the content box to 16:9
+     makes the clip fill it exactly, so the 24px padding is even all the way
+     around. max-width drops by 2×24px to keep the same 980px outer width. */
   .big-placeholder {
     aspect-ratio: 16/9;
-    max-width: 980px;
+    box-sizing: content-box;
+    max-width: 932px;
     margin: 0 auto;
     overflow: hidden;
     position: relative;
@@ -585,15 +592,15 @@
 
   <section class="demo-section" id="how">
     <div class="tabs reveal" data-delay="1">
-      <button class="tab active" data-mode="diagram">Diagram</button>
+      <button class="tab active" data-mode="mockup">UI Mockup</button>
       <button class="tab" data-mode="sketch">Sketch</button>
-      <button class="tab" data-mode="mockup">UI Mockup</button>
+      <button class="tab" data-mode="diagram">Diagram</button>
     </div>
     <div class="placeholder big-placeholder reveal lift" data-delay="2" id="modeStage">
       <div class="demo-media" id="modeMedia">
-        <video class="demo-media-item is-active" data-mode="diagram" src="landing/diagram-demo.mp4" autoplay loop muted playsinline></video>
+        <video class="demo-media-item is-active" data-mode="mockup" src="landing/ui-mockup-tab-demo.mp4" autoplay loop muted playsinline></video>
         <video class="demo-media-item" data-mode="sketch" src="landing/sketch-demo.mp4" loop muted playsinline preload="auto"></video>
-        <video class="demo-media-item" data-mode="mockup" src="landing/ui-mockup-tab-demo.mp4" loop muted playsinline preload="auto"></video>
+        <video class="demo-media-item" data-mode="diagram" src="landing/diagram-demo.mp4" loop muted playsinline preload="auto"></video>
       </div>
     </div>
   </section>
@@ -636,9 +643,7 @@
     <div class="chip-row reveal" data-delay="1" id="disciplineChips">
       <span class="chip active" data-video="industrial">Industrial Design</span>
       <span class="chip" data-video="architecture">Architecture</span>
-      <span class="chip">UX Design</span>
       <span class="chip" data-video="product">Product Design</span>
-      <span class="chip">Graphic Design</span>
       <span class="chip" data-video="fashion">Fashion</span>
       <span class="chip" data-video="engineering">Engineering</span>
     </div>
